@@ -26,6 +26,17 @@
 
 ---
 
+## Demo 预览
+
+以下为机器人推送到 Telegram 的真实效果展示：
+
+| 市场分析报告 (消息①) | 加密市场新闻播报 (消息②) |
+| :---: | :---: |
+| ![市场仪表盘](./assets/demo_dashboard.png) | ![新闻播报](./assets/demo_news1.png) |
+| ![赛道与叙事](./assets/demo_sectors.png) | ![新闻详情](./assets/demo_news2.png) |
+
+---
+
 ## 系统架构与工作流
 
 ```
