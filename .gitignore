@@ -16,3 +16,5 @@ com.shirley.crypto-daily-bot.plist
 com.shirley.crypto-daily-bot-health.plist
 
 .DS_Store
+__pycache__/
+.claude/
