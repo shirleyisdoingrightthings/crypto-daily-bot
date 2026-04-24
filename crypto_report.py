@@ -13,17 +13,16 @@ import os
 import sys
 import time
 import json
-import socket
-import calendar
 import traceback
-import functools
 import requests
-import feedparser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
 from openai import OpenAI
+
+# 共享工具库
+sys.path.insert(0, str(Path.home() / "Desktop" / "bot_shared"))
+from bot_utils import sanitize_html, with_retry, fetch_rss, parse_entry_date, already_ran_today
 
 LOG_FILE   = Path(__file__).parent / "run.log"
 JSONL_FILE = Path(__file__).parent / "run.jsonl"
@@ -165,25 +164,6 @@ Why it matters 规则（4/5分事件 80-100字，3分事件 60字内）：
 星级规则：5分=⭐⭐⭐⭐⭐ 4分=⭐⭐⭐⭐ 3分=⭐⭐⭐
 排版：星级和标签占第一行，中文标题另起一行，每条之间空行分隔\
 """
-
-
-# ===== P0: 指数退避重试装饰器 =====
-def with_retry(max_retries=3, base_delay=5.0, exceptions=(Exception,)):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            for attempt in range(max_retries + 1):
-                try:
-                    return func(*args, **kwargs)
-                except exceptions as e:
-                    if attempt == max_retries:
-                        raise
-                    delay = base_delay * (2 ** attempt)
-                    print(f"[RETRY] {func.__name__} 第{attempt+1}次失败: {e}，{delay:.0f}s 后重试",
-                          file=sys.stderr)
-                    time.sleep(delay)
-        return wrapper
-    return decorator
 
 
 # ===== P2: 消息缓存（降级策略）=====
@@ -387,40 +367,6 @@ def fetch_top_sectors() -> list:
 
 
 
-# ===== P1: 抓取 RSS（socket 超时 + 重试兜底）=====
-def fetch_rss(url: str, limit: int, retries: int = 2, delay: float = 3.0) -> list:
-    UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-    old_timeout = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(10)
-    try:
-        for attempt in range(retries + 1):
-            try:
-                feed = feedparser.parse(url, request_headers={"User-Agent": UA})
-                if feed.entries:
-                    return feed.entries[:limit]
-                if attempt < retries:
-                    time.sleep(delay)
-            except Exception as e:
-                if attempt < retries:
-                    time.sleep(delay)
-                else:
-                    print(f"[WARN] 抓取失败（已重试 {retries} 次）{url}: {e}", file=sys.stderr)
-    finally:
-        socket.setdefaulttimeout(old_timeout)
-    return []
-
-
-def parse_entry_date(entry) -> Optional[datetime]:
-    for field in ("published_parsed", "updated_parsed"):
-        t = getattr(entry, field, None)
-        if t:
-            try:
-                return datetime.fromtimestamp(calendar.timegm(t), tz=timezone.utc)
-            except Exception:
-                pass
-    return None
-
-
 # ===== 整理新闻数据 =====
 def build_news_context(
     entries: list, prices: dict, fear_val: str, fear_label: str,
@@ -528,36 +474,6 @@ def _send_one(chunk: str) -> None:
         raise requests.RequestException(f"Telegram 返回错误: {resp.text}")
 
 
-def sanitize_html(text: str) -> str:
-    """清理 HTML 标签，仅保留 <b> 和 <a href="...">，转义其余所有 < > &"""
-    import re
-    # 1. 保护合法标签，替换为占位符
-    text = re.sub(r'<b>', '[[B_OPEN]]', text)
-    text = re.sub(r'</b>', '[[B_CLOSE]]', text)
-    a_tags = []
-    def save_a(m):
-        a_tags.append(m.group(0))
-        return f"[[A_TAG_{len(a_tags)-1}]]"
-    # 原子捕获整个 <a>...</a> 块，避免多标签时顺序错乱
-    text = re.sub(r'<a\s+href="[^"]+">.*?</a>', save_a, text)
-
-    # 2. 转义所有剩余的 & < >
-    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-
-    # 3. 还原合法标签
-    text = text.replace('[[B_OPEN]]', '<b>').replace('[[B_CLOSE]]', '</b>')
-    for i, tag in enumerate(a_tags):
-        text = text.replace(f"[[A_TAG_{i}]]", tag)
-
-    # 4. 补全未闭合标签
-    if text.count('<b>') > text.count('</b>'):
-        text += '</b>' * (text.count('<b>') - text.count('</b>'))
-    if text.count('<a ') > text.count('</a>'):
-        text += '</a>' * (text.count('<a ') - text.count('</a>'))
-
-    return text
-
-
 def send_telegram(text: str) -> None:
     MAX_LEN = 4096
     # sanitize 一次，在拆分前完成，避免切分点破坏标签结构
@@ -595,12 +511,22 @@ def send_telegram(text: str) -> None:
 def main() -> None:
     t0 = time.time()
 
+    # 防重复推送：今天已有 [OK] 记录则跳过（FORCE_RUN=1 可绕过）
+    if already_ran_today(LOG_FILE):
+        print("今天已成功运行过，跳过。如需强制执行请设置 FORCE_RUN=1。")
+        return
+
     flush_pending()
 
     print("💰 抓取价格数据...")
     prices               = fetch_prices()
     fear_val, fear_label = fetch_fear_greed()
     print(f"  BTC={prices['BTC']}  HYPE={prices['HYPE']}  恐惧指数={fear_val}({fear_label})")
+
+    # 数据降级保护：核心价格全部缺失时跳过发送，避免推送空白报告
+    if prices.get("BTC") == "未知" and prices.get("ETH") == "未知":
+        write_log("WARN", "CoinGecko 核心价格数据全部失败，跳过本次发送，等待下次运行")
+        return
 
     print("🌐 抓取全球市场数据...")
     global_mkt = fetch_global_market()
