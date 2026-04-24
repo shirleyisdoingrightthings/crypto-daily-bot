@@ -46,7 +46,7 @@ CoinGecko /simple/price  ──┐
 CoinGecko /search/trending ─┤
 CoinGecko /global          ─┼──▶ build_news_context()
 alternative.me /fng/       ─┤         │
-RSS × 4 源                 ─┘         ▼
+RSS × 3 源                 ─┘         ▼
                                  call_deepseek() × 2
                                  ┌─── ① PROMPT_ANALYSIS ──▶ 市场晨报
                                  └─── ② PROMPT_NEWS     ──▶ 新闻播报
@@ -73,12 +73,13 @@ RSS × 4 源                 ─┘         ▼
 ## 文件结构
 
 ```
-~/Desktop/bot_ops/shared/bot_utils.py  # 外部共享工具库（与 AI Daily News Bot 共用）
+~/Desktop/bot_ops/shared/bot_utils.py      # 外部共享工具库（与 AI Daily News Bot 共用）
+~/Desktop/bot_ops/auto_repair_base.sh     # 外部共享修复逻辑（与 AI Daily News Bot 共用）
 
 Crypto Daily Bot/
 ├── crypto_report.py                    # 主脚本（抓取 → 分析 → 推送）
 ├── health_check.sh                     # 健康检查（失败时触发 auto_repair）
-├── auto_repair.sh                      # 自动修复代理（Level 1 重跑 / Level 2 Claude）
+├── auto_repair.sh                      # 薄包装：设置参数后委托 bot_ops/auto_repair_base.sh
 ├── run.log                             # 单行摘要日志（人类可读，脚本运行后生成）
 ├── run.jsonl                           # 结构化指标日志（程序可读，运行成功后生成）
 ├── changelog.md                        # 问题追踪，与 health_check 联动
