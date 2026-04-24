@@ -4,15 +4,22 @@
 
 ---
 
-## 工作流亮点
+## 工作流亮点与数据源支撑
 
 - 🪙 **6 大主流币实时价格**：BTC / ETH / SOL / BNB / XRP / HYPE
+  *(API: CoinGecko `/simple/price`)*
 - 🔥 **今日热搜榜**：CoinGecko 搜索热度 Top 5，捕捉注意力流向
+  *(API: CoinGecko `/search/trending`)*
 - 🌐 **加密货币总市值**：总市值 / 24h 成交量 / BTC 市占率 → 牛熊判断
+  *(API: CoinGecko `/global`)*
 - 🏦 **DeFi 表现**：DeFi 总市值 / 24h 成交量 / DeFi 市占率及龙头
+  *(API: CoinGecko `/global/decentralized_finance_defi`)*
 - 🗺 **赛道表现 (24h 涨幅 Top 5)**：监控全市场各板块资金流入情况
+  *(API: CoinGecko `/coins/categories`)*
 - 🌡 **情绪指数**：恐惧贪婪指数实时追踪
+  *(API: alternative.me `/fng/`)*
 - 📰 **4 大媒体 RSS**：Cointelegraph、CoinDesk、The Block、Decrypt
+  *(API: Feedparser RSS 聚合)*
 - 🤖 **AI 深度分析**：DeepSeek 生成市场晨报 + 新闻播报（共 2 条消息）
 - 🔁 **自我修复**：失败时自动重试，持续故障调用 Claude CLI 自动修复代码
 - 📦 **消息降级保护**：AI 生成后立即缓存，发送失败下次自动重发
