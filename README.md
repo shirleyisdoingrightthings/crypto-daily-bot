@@ -73,6 +73,8 @@ RSS × 4 源                 ─┘         ▼
 ## 文件结构
 
 ```
+~/Desktop/bot_ops/shared/bot_utils.py  # 外部共享工具库（与 AI Daily News Bot 共用）
+
 Crypto Daily Bot/
 ├── crypto_report.py                    # 主脚本（抓取 → 分析 → 推送）
 ├── health_check.sh                     # 健康检查（失败时触发 auto_repair）
