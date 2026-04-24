@@ -1,13 +1,16 @@
 # Crypto Daily Bot — AI 操作手册
 
 > **通用文件**：适用于 Claude Code、Cursor、GitHub Copilot、Codex 等任何 AI 工具。  
-> Claude Code 专属上下文见 `CLAUDE.md`（在此基础上做了精简，避免冗余）。
+# Crypto Daily Bot — 操作手册
+
+> **通用文件**：适用于任何 AI 工具。  
+> 专属上下文见 `CLAUDE.md`（在此基础上做了精简，避免冗余）。
 
 ---
 
 ## 工作流概述
 
-这是一个**完全自治的加密市场日报系统**。主脚本 `crypto_report.py` 每天早上 8:00 由 launchd 自动触发，无需人工干预。
+这是一个 **加密市场日报系统**。主脚本 `crypto_report.py` 每天由 launchd 自动触发，负责聚合行情数据与新闻并生成深度市场报告。
 
 ### 数据流
 
