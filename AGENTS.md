@@ -16,7 +16,8 @@
 CoinGecko /simple/price  ──┐
 CoinGecko /search/trending ─┤
 CoinGecko /global          ─┼──▶  build_news_context()
-   (总市值/成交量/BTC市占率)    │          │
+CoinGecko /global/decentralized_finance_defi ─┤   │
+CoinGecko /coins/categories ─┤             │
 alternative.me /fng/       ─┘          ▼
                                   call_deepseek() × 2
 RSS × 4 源 ─────────────────────▶  ① PROMPT_ANALYSIS  ──▶  Telegram 消息①（市场晨报）
@@ -74,8 +75,10 @@ RSS × 4 源 ─────────────────────▶ 
 | API | 接口 | 内容 | Plan |
 |-----|------|------|------|
 | CoinGecko | `/simple/price` | BTC/ETH/SOL/BNB/XRP/HYPE 价格 | Demo 免费 |
-| CoinGecko | `/search/trending` | 热搜趋势币 Top 15 | Demo 免费 |
-| CoinGecko | `/global` | 总市值 / 24h成交量 / BTC市占率 | Demo 免费 |
+| CoinGecko | `/search/trending` | 热搜榜 Top 15（取前 5） | Demo 免费 |
+| CoinGecko | `/global` | 加密货币总市值 / 24h成交量 / BTC市占率 | Demo 免费 |
+| CoinGecko | `/global/decentralized_finance_defi` | DeFi 总市值 / 成交量 / 市占率 | Demo 免费 |
+| CoinGecko | `/coins/categories` | 赛道表现（24h 涨幅 Top 5） | Demo 免费 |
 | alternative.me | `/fng/` | 恐惧贪婪指数 | 完全免费 |
 | RSS × 4 | Cointelegraph / CoinDesk / The Block / Decrypt | 新闻 | 免费 |
 

@@ -81,14 +81,14 @@ PROMPT_ANALYSIS = """\
 <b>📊 市场仪表盘</b>
 💰 主流币：BTC [价格及涨跌幅] | ETH [价格及涨跌幅] | SOL [价格及涨跌幅] | BNB [价格及涨跌幅] | XRP [价格及涨跌幅] | HYPE [价格及涨跌幅]
 🌡 情绪指数：[数值] — [等级]（一句话评价）
-🌐 全球市值：[总市值] ([24h涨跌]) | 24h 成交量：[总成交量] | BTC 市占 [市占率] → [牛熊标签]
+🌐 加密货币总市值：[总市值] ([24h涨跌]) | 24h 成交量：[总成交量] | BTC 市占 [市占率] → [牛熊标签]
 🏦 DeFi：市值 [DeFi总市值] | 市占 [DeFi市占率] | 龙头 [DeFi龙头币]
 
-<b>🗺 赛道热力图（今日涨幅 Top 3）</b>
+<b>🗺 赛道表现（24h 涨幅 Top 5）</b>
 每条一行：[赛道名] [涨跌幅] — 一句话说明资金流入逻辑或催化剂
 
-<b>🔥 今日趋势币</b>
-列出 3–5 个热搜趋势币，每条一行：[名称]([代号]) [涨跌幅] — 一句话说明为何上榜
+<b>🔥 今日热搜榜 (Top 5)</b>
+列出热搜榜币种，每条一行：[名称]([代号]) [涨跌幅] — 一句话说明为何上榜
 
 <b>🔭 核心叙事</b>
 提炼 1–2 个当前市场主线故事，结合新闻内容深度解读，约 100 字。编号用「1.」「2.」，不用加粗。
@@ -195,7 +195,7 @@ def flush_pending() -> bool:
 def fetch_prices() -> dict:
     url = (
         "https://api.coingecko.com/api/v3/simple/price"
-        "?ids=bitcoin,ethereum,solana,binancecoin,ripple"
+        "?ids=bitcoin,ethereum,solana,binancecoin,ripple,hyperliquid"
         "&vs_currencies=usd&include_24hr_change=true"
     )
     try:
@@ -444,7 +444,7 @@ def build_news_context(
         f"BNB: {prices['BNB']} | XRP: {prices['XRP']} | HYPE: {prices['HYPE']}\n"
         f"恐惧贪婪指数: {fear_val} ({fear_label})\n"
         f"----------------\n"
-        f"【全球市场】\n"
+        f"【加密货币总市值】\n"
         f"总市值: {global_mkt['total_market_cap_b']} ({global_mkt['market_cap_change_24h']}) | 24h 成交量: {global_mkt['total_volume_b']}\n"
         f"BTC 市占率: {global_mkt['btc_dominance']} → {global_mkt['bull_bear_label']}\n"
         f"----------------\n"
@@ -452,10 +452,10 @@ def build_news_context(
         f"DeFi 总市值: {defi_data['defi_market_cap_b']} | 24h 成交量: {defi_data['defi_volume_24h_b']} | DeFi 市占: {defi_data['defi_dominance']}\n"
         f"DeFi 龙头: {defi_data['top_defi_coin']}\n"
         f"----------------\n"
-        f"【今日赛道热力图（涨幅 Top 5）】\n"
+        f"【赛道表现（24h 涨幅 Top 5）】\n"
         f"{sector_str}\n"
         f"----------------\n"
-        f"【今日趋势币（热搜 Top 5）】\n"
+        f"【今日热搜榜 (Top 5)】\n"
         f"{trend_str}\n"
         f"----------------\n\n"
     )
