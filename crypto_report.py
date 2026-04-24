@@ -19,6 +19,7 @@ import traceback
 import functools
 import requests
 import feedparser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -64,7 +65,7 @@ RSS_SOURCES = [
 ]
 
 PROMPT_ANALYSIS = """\
-角色：你是一位擅长宏观叙事与链上数据分析的 Web3 资深研究员。
+角色：你是一位擅长宏观叙事与链上数据分析的 Web3 资深研究员。面向中文读者，要求专业、克制、有信息密度，不带 AI 总结腔。
 
 任务：结合【今日核心数据】（币价 / 情绪指数 / 全球市场 / DeFi 赛道 / 赛道热力图 / 趋势币）与【新闻摘要】，撰写一份《每日加密市场晨报》。
 
@@ -76,7 +77,13 @@ PROMPT_ANALYSIS = """\
 5. 趋势币解读：今日热搜币与市场叙事的关联
 6. 拒绝流水账：不复述新闻，输出洞察
 
-严格按照以下 HTML 格式输出，禁止使用 ** 或其他 Markdown 符号：
+语言规范（写完必须自查）：
+- 词汇黑名单（出现即删）：这标志着、这意味着、深度、赋能、颠覆、重磅、范式转移、根本性转变、历史性一刻、新时代、整个行业
+- 每个判断有具体对象，不泛指；不用感叹号；不用排比句
+
+⚠️ HTML 标签限制：只能使用 <b>文字</b> 两种加粗标签，禁止使用 **、<i>、<br>、<code> 等任何其他标签或 Markdown 符号，否则会导致消息发送失败。
+
+严格按照以下格式输出：
 
 <b>📊 市场仪表盘</b>
 💰 主流币：BTC [价格及涨跌幅] | ETH [价格及涨跌幅] | SOL [价格及涨跌幅] | BNB [价格及涨跌幅] | XRP [价格及涨跌幅] | HYPE [价格及涨跌幅]
@@ -98,9 +105,7 @@ PROMPT_ANALYSIS = """\
 🚨 警惕：[具体风险点，如监管落地或巨鲸抛压]
 
 <b>💡 分析师观点</b>
-给出未来 24 小时趋势预判：震荡、看涨还是回调？给出具体理由。
-
-风格：专业、克制，不用感叹号，不用"重磅""颠覆"等夸张词。\
+给出未来 24 小时趋势预判：震荡、看涨还是回调？给出具体理由，说明影响哪类持仓或策略。\
 """
 
 
@@ -109,39 +114,56 @@ PROMPT_ANALYSIS = """\
 
 
 PROMPT_NEWS = """\
-角色：你是一位专注加密货币与 Web3 领域的资深编辑。
+角色：你是一位专注加密货币与 Web3 领域的资深编辑。面向中文读者，要求专业、克制、有信息密度，不带 AI 总结腔。
 
 任务：基于输入的新闻数据，生成一份《加密市场新闻播报》。
 
+━━━━━━━━━━━━━━━━
 【处理规则】
 1. 去重与合并：标题语义相似 + 主体一致 → 合并为一条，保留最权威来源
-2. 时效过滤：仅收录 3 天内新闻
+2. 时效说明：输入数据已预过滤为 3 天内，直接按评分筛选
 3. 评分标准：
    5分：监管重大决策、交易所重大事件、BTC/ETH 历史级价格突破、主权级采购
    4分：主流协议重大升级、机构大额入场/离场、监管草案或立法进展、链上异常数据
    3分：项目融资、合作、产品发布、市场分析、新币上线
 4. 排序：按评分从高到低；同分下 监管 > 市场行情 > 机构 > 协议/DeFi > 交易所 > 其他
 5. 标签（每条选 1–2 个）：#监管 #市场行情 #机构动向 #DeFi #协议升级 #交易所 #Layer2 #NFT #宏观 #Crypto
+━━━━━━━━━━━━━━━━
+【写作要求】
 
-【输出格式】（严格使用 HTML，禁止 Markdown）
+The Details 格式与规则：
+- 使用 bullet list，每条加粗小标题，HTML 格式：<b>小标题</b>：具体事实
+- 5分/4分事件写 3-4 条，3分事件写 2-3 条；每条必须有具体数字、人名或量化数据
+- 只写客观事实，以下内容禁止出现在 Details，必须后置到 Why it matters：
+  · "这意味着……""说明……""暗示……"等推断性表述
+  · 对动机或未来走向的解读
+- 严禁模糊代词：不写"该项目""这家机构"，必须写具体名称
+
+Why it matters 规则（4/5分事件 80-100字，3分事件 60字内）：
+- 第一句直接切入因果判断，不复述 Details
+- 必须说明具体受影响对象（某类投资者、项目方或用户）
+- 禁止："这标志着……""这意味着……""这推动了……"及任何泛指"整个行业"的表述
+
+语言规范：
+- 词汇黑名单：这标志着、这意味着、深度、赋能、颠覆、重磅、范式转移、整个行业
+- 不用排比句式，不用感叹号
+
+⚠️ HTML 标签限制：只能使用 <b>文字</b> 和 <a href="URL">文字</a> 两种标签，禁止使用任何其他 HTML 标签或 Markdown 符号，否则会导致消息发送失败。
+━━━━━━━━━━━━━━━━
+【输出格式】
 
 📋 加密市场播报 · [今天日期]
 
-每条新闻格式如下（条目之间空一行）：
-
 [星级] [标签]
-[中文标题，一句话说清事件]
-📄 The Details：[150字以内，陈述事实、涉及主体、关键数字]
-💡 Why it matters：[80字以内，具体分析：对哪类投资者或项目的影响、触发什么连锁反应]
+[中文标题，一句话说清事件，不超过20字]
+📄 The Details：
+<b>小标题</b>：具体事实和数据
+<b>小标题</b>：具体事实和数据
+💡 Why it matters：[直接从因果判断开始，不复述Details]
 🔗 <a href="原文链接URL">英文原始标题 · 媒体名</a>
 
 星级规则：5分=⭐⭐⭐⭐⭐ 4分=⭐⭐⭐⭐ 3分=⭐⭐⭐
-
-Why it matters 禁止：
-- "这标志着……""这意味着……""这推动了……"
-- 任何以"这"字开头后跟宽泛影响的句子
-
-⚠️ 整份播报控制在 4096 字符以内，宁少勿多，优先保留高分条目。\
+排版：星级和标签占第一行，中文标题另起一行，每条之间空行分隔\
 """
 
 
@@ -182,7 +204,7 @@ def flush_pending() -> bool:
             return False
         print(f"[CACHE] 发现 {len(pending)} 条待发消息（来自 {data.get('ts','?')}），优先重发...")
         for msg in pending:
-            _send_one(msg)
+            send_telegram(msg)
         CACHE_FILE.unlink(missing_ok=True)
         print("[CACHE] 缓存消息重发成功")
         return True
@@ -192,6 +214,7 @@ def flush_pending() -> bool:
 
 
 # ===== 获取价格数据 =====
+@with_retry(max_retries=2, base_delay=5, exceptions=(Exception,))
 def fetch_prices() -> dict:
     url = (
         "https://api.coingecko.com/api/v3/simple/price"
@@ -224,6 +247,7 @@ def fetch_prices() -> dict:
 
 
 # ===== 获取趋势币（/search/trending，Demo tier 可用）=====
+@with_retry(max_retries=2, base_delay=5, exceptions=(Exception,))
 def fetch_trending() -> list:
     """返回最多 5 条趋势币"""
     url = "https://api.coingecko.com/api/v3/search/trending"
@@ -250,6 +274,7 @@ def fetch_trending() -> list:
 
 
 # ===== 获取全球市场数据（牛熊指标）=====
+@with_retry(max_retries=2, base_delay=5, exceptions=(Exception,))
 def fetch_global_market() -> dict:
     """返回总市值、BTC 市占率及综合牛熊判断"""
     url = "https://api.coingecko.com/api/v3/global"
@@ -289,6 +314,7 @@ def fetch_global_market() -> dict:
 
 
 # ===== 获取恐惧贪婪指数 =====
+@with_retry(max_retries=2, base_delay=5, exceptions=(Exception,))
 def fetch_fear_greed() -> tuple:
     try:
         resp = SESSION.get("https://api.alternative.me/fng/", timeout=10)
@@ -301,6 +327,7 @@ def fetch_fear_greed() -> tuple:
 
 
 # ===== 获取 DeFi 全局数据（/global/decentralized_finance_defi）=====
+@with_retry(max_retries=2, base_delay=5, exceptions=(Exception,))
 def fetch_defi_global() -> dict:
     """
     返回：DeFi 总市值、24h 交易量、DeFi 市占率、当日 DeFi 龙头币
@@ -329,6 +356,7 @@ def fetch_defi_global() -> dict:
 
 
 # ===== 获取赛道热力图（/coins/categories，按 24h 涨幅排序）=====
+@with_retry(max_retries=2, base_delay=5, exceptions=(Exception,))
 def fetch_top_sectors() -> list:
     """
     返回今日涨幅最大的 5 个赛道，格式：[{name, change_24h, volume_24h_b}]
@@ -501,62 +529,64 @@ def _send_one(chunk: str) -> None:
 
 
 def sanitize_html(text: str) -> str:
-    """
-    1. 处理由于 AI 截断或切分产生的不完整标签
-    2. 保留 Telegram 合法标签（<b> </b> <a href="..."> </a>），
-       把其余所有 < > 转义为 &lt; &gt;，防止纯文本触发解析错误。
-    """
+    """清理 HTML 标签，仅保留 <b> 和 <a href="...">，转义其余所有 < > &"""
     import re
+    # 1. 保护合法标签，替换为占位符
+    text = re.sub(r'<b>', '[[B_OPEN]]', text)
+    text = re.sub(r'</b>', '[[B_CLOSE]]', text)
+    a_tags = []
+    def save_a(m):
+        a_tags.append(m.group(0))
+        return f"[[A_TAG_{len(a_tags)-1}]]"
+    # 原子捕获整个 <a>...</a> 块，避免多标签时顺序错乱
+    text = re.sub(r'<a\s+href="[^"]+">.*?</a>', save_a, text)
 
-    # 1. 去除末尾未闭合的标签
-    if text.count("<a ") > text.count("</a>"):
-        text = text[:text.rfind("<a ")].rstrip()
-    if text.count("<b>") > text.count("</b>"):
-        text = text[:text.rfind("<b>")].rstrip()
+    # 2. 转义所有剩余的 & < >
+    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-    # 2. 先提取所有合法标签，用占位符替换
-    valid_tags = re.findall(r'<b>|</b>|<a\s+href="[^"]*">|</a>', text)
-    placeholders = {}
-    result = text
-    for i, tag in enumerate(valid_tags):
-        placeholder = f"\x00TAG{i}\x00"
-        placeholders[placeholder] = tag
-        result = result.replace(tag, placeholder, 1)
+    # 3. 还原合法标签
+    text = text.replace('[[B_OPEN]]', '<b>').replace('[[B_CLOSE]]', '</b>')
+    for i, tag in enumerate(a_tags):
+        text = text.replace(f"[[A_TAG_{i}]]", tag)
 
-    # 3. 转义剩余的 < >
-    result = result.replace("<", "&lt;").replace(">", "&gt;")
+    # 4. 补全未闭合标签
+    if text.count('<b>') > text.count('</b>'):
+        text += '</b>' * (text.count('<b>') - text.count('</b>'))
+    if text.count('<a ') > text.count('</a>'):
+        text += '</a>' * (text.count('<a ') - text.count('</a>'))
 
-    # 4. 还原合法标签
-    for placeholder, tag in placeholders.items():
-        result = result.replace(placeholder, tag)
-
-    return result
+    return text
 
 
 def send_telegram(text: str) -> None:
-    MAX_LEN = 4000  # 预留部分余量
+    MAX_LEN = 4096
+    # sanitize 一次，在拆分前完成，避免切分点破坏标签结构
     text = sanitize_html(text)
-    
-    chunks = []
-    current_chunk = ""
-    for line in text.split('\n'):
-        if len(current_chunk) + len(line) + 1 > MAX_LEN:
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-                current_chunk = line + "\n"
-            else:
-                # 极端情况：单行超过 MAX_LEN
-                chunks.append(line[:MAX_LEN])
-                current_chunk = line[MAX_LEN:] + "\n"
+
+    if len(text) <= MAX_LEN:
+        _send_one(text)
+        return
+
+    # 按段落边界（\n\n）拆分，保证每条新闻完整不被截断
+    paragraphs = text.split('\n\n')
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    for para in paragraphs:
+        needed = len(para) + (2 if current else 0)  # 2 for '\n\n' separator
+        if current_len + needed > MAX_LEN and current:
+            chunks.append('\n\n'.join(current))
+            current = [para]
+            current_len = len(para)
         else:
-            current_chunk += line + "\n"
-            
-    if current_chunk.strip():
-        chunks.append(current_chunk.strip())
+            current.append(para)
+            current_len += needed
+
+    if current:
+        chunks.append('\n\n'.join(current))
 
     for chunk in chunks:
-        # 二次检查，避免极端切分情况导致的不完整标签
-        chunk = sanitize_html(chunk)
         _send_one(chunk)
 
 
@@ -604,13 +634,13 @@ def main() -> None:
     news_count   = news_context.count("----")
     print(f"  ✓ 保留 {news_count} 条有效新闻")
 
-    print("\n🤖 生成市场分析报告（消息①）...")
-    analysis = call_deepseek(PROMPT_ANALYSIS, news_context)
-    print("  ✓ 完成")
-
-    print("🤖 生成新闻播报列表（消息②）...")
-    news_report = call_deepseek(PROMPT_NEWS, f"今天日期：{today}\n\n{news_context}")
-    print("  ✓ 完成")
+    print("\n🤖 并行生成市场分析报告（消息①）+ 新闻播报列表（消息②）...")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        fut_analysis = executor.submit(call_deepseek, PROMPT_ANALYSIS, news_context)
+        fut_news     = executor.submit(call_deepseek, PROMPT_NEWS, f"今天日期：{today}\n\n{news_context}")
+        analysis    = fut_analysis.result()
+        news_report = fut_news.result()
+    print("  ✓ 两份报告均已完成")
 
     save_pending([analysis, news_report])
 
