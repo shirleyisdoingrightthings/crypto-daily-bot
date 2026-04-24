@@ -18,7 +18,7 @@
   *(API: CoinGecko `/coins/categories`)*
 - 🌡 **情绪指数**：恐惧贪婪指数实时追踪
   *(API: alternative.me `/fng/`)*
-- 📰 **4 大媒体 RSS**：Cointelegraph、CoinDesk、The Block、Decrypt
+- 📰 **3 大媒体 RSS**：Cointelegraph、CoinDesk、Decrypt
   *(API: Feedparser RSS 聚合)*
 - 🤖 **AI 深度分析**：DeepSeek 生成市场晨报 + 新闻播报（共 2 条消息）
 - 🔁 **自我修复**：失败时自动重试，持续故障调用 Claude CLI 自动修复代码
