@@ -116,11 +116,16 @@ cd ~/Desktop/Crypto\ Daily\ Bot
 ```
 
 **激活自动调度**
+
+1. 将样板文件拷贝为正式配置文件：
 ```bash
-cp com.shirley.crypto-daily-bot.plist ~/Library/LaunchAgents/
-cp com.shirley.crypto-daily-bot-health.plist ~/Library/LaunchAgents/
+cp com.shirley.crypto-daily-bot.plist.example com.shirley.crypto-daily-bot.plist
+```
+2. **重要**：编辑 `com.shirley.crypto-daily-bot.plist`，填入你的 API Key、路径和代理端口。
+3. 加载任务：
+```bash
+cp *.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist
-launchctl load ~/Library/LaunchAgents/com.shirley.crypto-daily-bot-health.plist
 ```
 
 **验证调度状态**

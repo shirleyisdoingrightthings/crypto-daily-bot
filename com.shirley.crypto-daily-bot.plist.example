@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.EN">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.shirley.crypto-daily-bot</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3.11</string>
+        <string>/Users/YOUR_NAME/Desktop/Crypto Daily Bot/crypto_report.py</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>DEEPSEEK_API_KEY</key>
+        <string>YOUR_DEEPSEEK_KEY_HERE</string>
+        <key>TELEGRAM_BOT_TOKEN</key>
+        <string>YOUR_TELEGRAM_TOKEN_HERE</string>
+        <key>TELEGRAM_CHAT_ID</key>
+        <string>YOUR_CHAT_ID_HERE</string>
+        <key>COINGECKO_API_KEY</key>
+        <string>YOUR_COINGECKO_KEY_HERE</string>
+        <key>HTTPS_PROXY</key>
+        <string>http://127.0.0.1:YOUR_PORT</string>
+        <key>HTTP_PROXY</key>
+        <string>http://127.0.0.1:YOUR_PORT</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_NAME/Desktop/Crypto Daily Bot/launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_NAME/Desktop/Crypto Daily Bot/launchd.log</string>
+</dict>
+</plist>
