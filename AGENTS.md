@@ -1,6 +1,3 @@
-# Crypto Daily Bot — AI 操作手册
-
-> **通用文件**：适用于 Claude Code、Cursor、GitHub Copilot、Codex 等任何 AI 工具。  
 # Crypto Daily Bot — 操作手册
 
 > **通用文件**：适用于任何 AI 工具。  
