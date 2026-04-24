@@ -1,33 +1,51 @@
 #!/bin/bash
 # health_check.sh — Crypto Daily Bot
 # 功能：
-#   1. 检查 run.log 最后一行是否失败
-#      └─ 触发 auto_repair.sh（Level 1 重跑 / Level 2 Claude 修复）
-#      └─ auto_repair 失败时才需要人工介入
+#   1. 检查今天是否有 [OK] 记录（基于日期，而非最后一行）
+#      └─ 若今天有 [FAIL] → 触发 auto_repair.sh
+#      └─ 若今天无任何记录（脚本可能仍在运行）→ 等待 60s 后重判
+#      └─ 等待后仍无记录 → WARN 通知人工介入
 #   2. 成功时核销 changelog.md 中已修复的条目（连续 3 次 OK 后删除）
-#
-# 用法：脚本执行完成后 ~30 分钟触发（launchd / cron）
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG="$DIR/run.log"
 CHANGELOG="$DIR/changelog.md"
-OK_COUNT_FILE="$DIR/.ok_streak"   # 记录连续成功次数
+OK_COUNT_FILE="$DIR/.ok_streak"
+TODAY=$(date '+%Y-%m-%d')
 
-# ── 1. 检查 run.log ──────────────────────────────────────────────────
+# ── 1. 检查 run.log 是否存在 ─────────────────────────────────────────
 if [ ! -f "$LOG" ]; then
     osascript -e 'display notification "run.log 不存在，脚本可能从未运行" with title "⚠️ Crypto Daily Bot"'
     exit 1
 fi
 
-LAST=$(tail -1 "$LOG")
-TS=$(echo "$LAST" | cut -c1-16)   # 前16位是时间戳
+# ── 2. 判断今天的运行状态（基于日期，而不是 tail -1）────────────────
+get_today_status() {
+    if grep -q "$TODAY.*\[OK\]" "$LOG"; then
+        echo "OK"
+    elif grep -q "$TODAY.*\[FAIL\]" "$LOG"; then
+        echo "FAIL"
+    else
+        echo "MISSING"
+    fi
+}
 
-# ── 2. 失败处理：先写 changelog，再触发 auto_repair ─────────────────
-if echo "$LAST" | grep -q "\[FAIL\]"; then
-    ERR=$(echo "$LAST" | sed 's/.*\[FAIL\]  //')
+STATUS=$(get_today_status)
+
+# 若今天无记录，等待 60s 再判一次（应对补跑竞态：脚本可能仍在运行中）
+if [ "$STATUS" = "MISSING" ]; then
+    echo "[health_check] 今天暂无运行记录，等待 60s 后重判（可能为补跑中）..."
+    sleep 60
+    STATUS=$(get_today_status)
+fi
+
+# ── 3. 根据状态分支处理 ───────────────────────────────────────────────
+if [ "$STATUS" = "FAIL" ]; then
+    ERR_LINE=$(grep "$TODAY.*\[FAIL\]" "$LOG" | tail -1)
+    ERR=$(echo "$ERR_LINE" | sed 's/.*\[FAIL\]  //')
     SHORT=$(echo "$ERR" | cut -c1-120)
+    TS=$(echo "$ERR_LINE" | cut -c1-16)
 
-    # 写入 changelog.md（如果同类错误不存在则新增）
     if [ ! -f "$CHANGELOG" ]; then
         echo "# Changelog — Crypto Daily Bot" > "$CHANGELOG"
         echo "" >> "$CHANGELOG"
@@ -38,18 +56,29 @@ if echo "$LAST" | grep -q "\[FAIL\]"; then
         echo "- [ ] \`$TS\` $SHORT" >> "$CHANGELOG"
     fi
 
-    # 重置连续成功计数
     echo "0" > "$OK_COUNT_FILE"
-
     echo "[health_check] FAIL 检测到，触发 auto_repair..."
-    # 调用自动修复代理（后台运行，不阻塞 health_check）
     bash "$DIR/auto_repair.sh" "$ERR" &
-
-    echo "[health_check] FAIL — $LAST"
+    echo "[health_check] FAIL — $ERR_LINE"
     exit 2
+
+elif [ "$STATUS" = "MISSING" ]; then
+    osascript -e 'display notification "今天主脚本未运行，请检查 launchd 配置" with title "⚠️ Crypto Daily Bot"'
+    echo "[health_check] WARN: 今天（$TODAY）无任何运行记录，人工介入"
+    exit 1
 fi
 
-# ── 3. 成功处理：更新 OK streak，核销 changelog ──────────────────────
+# ── 4. 今天 OK：内容质量校验（BTC 价格是否缺失）────────────────────
+JSONL="$DIR/run.jsonl"
+if [ -f "$JSONL" ]; then
+    LAST_BTC=$(grep "$TODAY" "$JSONL" | tail -1 | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('btc','ok'))" 2>/dev/null)
+    if [ "$LAST_BTC" = "未知" ]; then
+        osascript -e 'display notification "BTC 价格数据缺失，请检查 CoinGecko API Key" with title "⚠️ Crypto Daily Bot"'
+        echo "[health_check] WARN: BTC 价格数据缺失"
+    fi
+fi
+
+# ── 5. 更新 OK streak，核销 changelog ────────────────────────────────
 STREAK=0
 if [ -f "$OK_COUNT_FILE" ]; then
     STREAK=$(cat "$OK_COUNT_FILE")
@@ -57,11 +86,10 @@ fi
 STREAK=$((STREAK + 1))
 echo "$STREAK" > "$OK_COUNT_FILE"
 
-echo "[health_check] OK (streak=$STREAK) — $LAST"
+OK_LINE=$(grep "$TODAY.*\[OK\]" "$LOG" | tail -1)
+echo "[health_check] OK (streak=$STREAK) — $OK_LINE"
 
-# 连续 3 次成功：核销 changelog 中标记为 [x] 的条目
 if [ "$STREAK" -ge 3 ] && [ -f "$CHANGELOG" ]; then
-    # 删除包含 [x] 的条目行
     BEFORE=$(wc -l < "$CHANGELOG")
     grep -v "^\- \[x\]" "$CHANGELOG" > "$CHANGELOG.tmp" && mv "$CHANGELOG.tmp" "$CHANGELOG"
     AFTER=$(wc -l < "$CHANGELOG")
@@ -73,4 +101,3 @@ if [ "$STREAK" -ge 3 ] && [ -f "$CHANGELOG" ]; then
 fi
 
 exit 0
-
