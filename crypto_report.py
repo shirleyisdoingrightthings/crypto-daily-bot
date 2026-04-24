@@ -21,7 +21,7 @@ from pathlib import Path
 from openai import OpenAI
 
 # 共享工具库
-sys.path.insert(0, str(Path.home() / "Desktop" / "bot_shared"))
+sys.path.insert(0, str(Path.home() / "Desktop" / "bot_ops" / "shared"))
 from bot_utils import sanitize_html, with_retry, fetch_rss, parse_entry_date, already_ran_today
 
 LOG_FILE   = Path(__file__).parent / "run.log"

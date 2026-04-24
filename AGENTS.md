@@ -56,7 +56,7 @@ RSS × 4 源 ─────────────────────▶ 
 |------|------|---------|
 | `crypto_report.py` | 主脚本：抓取→生成→推送 | 偶尔 |
 | `health_check.sh` | 按日期检查今天 [OK]/[FAIL] 状态，含 60s 等待防竞态；BTC 数据质量通知；触发 auto_repair | 极少 |
-| `~/Desktop/bot_shared/bot_utils.py` | 共享工具库（两个 Bot 共用）：sanitize_html / with_retry / fetch_rss / parse_entry_date / already_ran_today | 偶尔 |
+| `~/Desktop/bot_ops/shared/bot_utils.py` | 共享工具库（两个 Bot 共用）：sanitize_html / with_retry / fetch_rss / parse_entry_date / already_ran_today | 偶尔 |
 | `auto_repair.sh` | 两级自动修复代理 | 极少 |
 | `run.log` | 单行摘要日志（人类可读） | 每日写入 |
 | `run.jsonl` | 结构化指标（程序可读） | 每日写入 |
