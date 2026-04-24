@@ -110,3 +110,4 @@ else
     osascript -e "display notification \"自动修复失败，需要人工介入\" with title \"❌ Crypto Daily Bot\""
     exit 4
 fi
+

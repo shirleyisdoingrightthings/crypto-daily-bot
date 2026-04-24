@@ -14,3 +14,4 @@ pending_messages.json
 # 敏感信息（plist 中含 API Key，不应上传）
 com.shirley.crypto-daily-bot.plist
 com.shirley.crypto-daily-bot-health.plist
+

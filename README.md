@@ -28,8 +28,6 @@
 
 ## Demo 预览
  
-- 📸 **运行效果展示**：
- 
  <details>
  <summary>点击展开查看 Bot 推送到 Telegram 的长图预览</summary>
  <br>

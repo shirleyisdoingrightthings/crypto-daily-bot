@@ -170,3 +170,4 @@ launchctl list | grep shirley
 2. 修复后必须输出 `FIX: <一行说明>` 或 `CANNOT_FIX: <原因>`
 3. 不得触碰修改禁区中的任何内容
 4. 如果不确定根因，选择 `CANNOT_FIX` 而不是盲目修改
+

@@ -73,3 +73,4 @@ if [ "$STREAK" -ge 3 ] && [ -f "$CHANGELOG" ]; then
 fi
 
 exit 0
+
