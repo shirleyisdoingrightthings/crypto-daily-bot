@@ -103,7 +103,7 @@ Crypto Daily Bot/
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | plist（需手动填入） |
 | `TELEGRAM_CHAT_ID` | 目标 Chat ID | plist（已配置）|
 | `COINGECKO_API_KEY` | CoinGecko Demo Key | plist（已配置）|
-| `HTTPS_PROXY` | 代理地址 | plist（已配置，127.0.0.1:6984）|
+| `HTTPS_PROXY` | 代理地址 | plist（已配置，127.0.0.1:YOUR_PORT）|
 
 ---
 

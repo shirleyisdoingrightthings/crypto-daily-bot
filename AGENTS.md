@@ -97,7 +97,7 @@ YYYY-MM-DD HH:MM  [OK/FAIL/WARN]  消息内容
 - Crypto Daily Bot 收录 **3 天内**新闻（`timedelta(days=3)`）
 
 ### 代理
-- 固定走 `127.0.0.1:6984`（Clash 本地端口）
+- 固定走 `127.0.0.1:YOUR_PORT` (本地代理端口)
 - `requests` 通过 `SESSION` 显式配置，`feedparser` 通过 `HTTP_PROXY` 环境变量
 
 ### 重试策略

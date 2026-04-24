@@ -29,7 +29,7 @@ JSONL_FILE = Path(__file__).parent / "run.jsonl"
 CACHE_FILE = Path(__file__).parent / "pending_messages.json"
 
 # ===== P0: 显式代理配置 =====
-_PROXY = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY") or "http://127.0.0.1:6984"
+_PROXY = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
 SESSION = requests.Session()
 SESSION.proxies = {"http": _PROXY, "https": _PROXY}
 # feedparser 内部使用 urllib，通过环境变量注入代理
