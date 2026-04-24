@@ -28,9 +28,15 @@
 
 ## Demo 预览
  
- 以下为机器人推送到 Telegram 频道的真实运行效果（长图预览）：
+- 📸 **运行效果展示**：
+ 
+ <details>
+ <summary>点击展开查看 Bot 推送到 Telegram 的长图预览</summary>
+ <br>
  
  ![Crypto Daily Bot 运行效果图](./assets/full_demo.png)
+ 
+ </details>
  
  ---
 
