@@ -1,5 +1,5 @@
 #!/bin/bash
-# auto_repair.sh — Crypto Daily 自动修复代理
+# auto_repair.sh — Crypto Daily Bot 自动修复代理
 #
 # 调用方：health_check.sh（检测到 [FAIL] 时触发）
 # 输入参数：$1 = 错误信息字符串
@@ -58,7 +58,7 @@ fi
 # ── Level 2：调用 claude CLI 自动修复 ──────────────────────────────
 log "调用 Claude 进行自动修复..."
 
-REPAIR_PROMPT="你是 Crypto Daily 工作流的自动修复代理。
+REPAIR_PROMPT="你是 Crypto Daily Bot 工作流的自动修复代理。
 
 当前错误：$ERROR
 
@@ -86,7 +86,7 @@ if echo "$FIX_RESULT" | grep -q "CANNOT_FIX:"; then
     log "⚠️  Claude 无法自动修复：$REASON"
     changelog_update "$(echo "$ERROR" | cut -c1-60)" "[/]"
     changelog_append "  - \`$(date '+%Y-%m-%d %H:%M')\` AUTO-REPAIR SKIPPED: $REASON → 需要人工介入"
-    osascript -e "display notification \"需要人工介入：$REASON\" with title \"⚠️ Crypto Daily 修复失败\""
+    osascript -e "display notification \"需要人工介入：$REASON\" with title \"⚠️ Crypto Daily Bot 修复失败\""
     exit 3
 fi
 
@@ -101,12 +101,12 @@ if [ $EXIT_CODE -eq 0 ]; then
     SHORT=$(echo "$ERROR" | cut -c1-80)
     changelog_update "$SHORT" "[x]"
     changelog_append "  - \`$(date '+%Y-%m-%d %H:%M')\` AUTO-FIXED (Claude): $FIX_SUMMARY"
-    osascript -e "display notification \"已自动修复并重跑成功\" with title \"✅ Crypto Daily Auto-Repair\""
+    osascript -e "display notification \"已自动修复并重跑成功\" with title \"✅ Crypto Daily Bot Auto-Repair\""
     exit 0
 else
     log "❌ Claude 修复后重跑仍失败"
     changelog_update "$(echo "$ERROR" | cut -c1-60)" "[/]"
     changelog_append "  - \`$(date '+%Y-%m-%d %H:%M')\` AUTO-REPAIR FAILED → 需要人工介入"
-    osascript -e "display notification \"自动修复失败，需要人工介入\" with title \"❌ Crypto Daily\""
+    osascript -e "display notification \"自动修复失败，需要人工介入\" with title \"❌ Crypto Daily Bot\""
     exit 4
 fi

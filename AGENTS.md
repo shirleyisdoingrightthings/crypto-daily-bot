@@ -1,4 +1,4 @@
-# Crypto Daily — AI 操作手册
+# Crypto Daily Bot — AI 操作手册
 
 > **通用文件**：适用于 Claude Code、Cursor、GitHub Copilot、Codex 等任何 AI 工具。  
 > Claude Code 专属上下文见 `CLAUDE.md`（在此基础上做了精简，避免冗余）。
@@ -63,8 +63,8 @@ RSS × 4 源 ─────────────────────▶ 
 | `pending_messages.json` | Telegram 发送缓存（降级保护） | 临时 |
 | `launchd.log` | launchd 的 stdout/stderr | 每日写入 |
 | `health_check.log` | health_check 运行日志 | 每日写入 |
-| `com.shirley.crypto-daily.plist` | 主脚本 launchd 配置 | 极少 |
-| `com.shirley.crypto-daily-health.plist` | health_check launchd 配置 | 极少 |
+| `com.shirley.crypto-daily-bot.plist` | 主脚本 launchd 配置 | 极少 |
+| `com.shirley.crypto-daily-bot-health.plist` | health_check launchd 配置 | 极少 |
 
 ---
 
@@ -94,7 +94,7 @@ YYYY-MM-DD HH:MM  [OK/FAIL/WARN]  消息内容
 - 单条消息上限 4096 字符
 
 ### 新闻时效
-- Crypto Daily 收录 **3 天内**新闻（`timedelta(days=3)`）
+- Crypto Daily Bot 收录 **3 天内**新闻（`timedelta(days=3)`）
 
 ### 代理
 - 固定走 `127.0.0.1:6984`（Clash 本地端口）

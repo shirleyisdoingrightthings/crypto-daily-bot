@@ -1,4 +1,4 @@
-# Crypto Daily
+# Crypto Daily Bot
 
 每日自动从 CoinGecko、RSS 等数据源抓取加密市场信息，经 DeepSeek 分析后生成日报，推送到 Telegram。完全自治运行，无需人工干预。
 
@@ -61,7 +61,7 @@ RSS × 4 源                 ─┘         ▼
 ## 文件结构
 
 ```
-Crypto Daily/
+Crypto Daily Bot/
 ├── crypto_report.py                    # 主脚本（抓取 → 分析 → 推送）
 ├── health_check.sh                     # 健康检查（失败时触发 auto_repair）
 ├── auto_repair.sh                      # 自动修复代理（Level 1 重跑 / Level 2 Claude）
@@ -71,8 +71,8 @@ Crypto Daily/
 ├── pending_messages.json               # Telegram 缓存（仅 Telegram 失败时存在）
 ├── AGENTS.md                           # 通用 AI 操作手册（适用于任意 AI 工具）
 ├── CLAUDE.md                           # Claude Code 专属上下文（引用 AGENTS.md）
-├── com.shirley.crypto-daily.plist      # launchd 主脚本配置（08:00 触发）
-├── com.shirley.crypto-daily-health.plist  # launchd 健康检查配置（08:30 触发）
+├── com.shirley.crypto-daily-bot.plist      # launchd 主脚本配置（08:00 触发）
+├── com.shirley.crypto-daily-bot-health.plist  # launchd 健康检查配置（08:30 触发）
 └── README.md                           # 本文件（人类阅读）
 ```
 
@@ -83,7 +83,7 @@ Crypto Daily/
 
 ## 环境变量
 
-所有变量已写入 `com.shirley.crypto-daily.plist`，launchd 会自动注入，无需手动配置 shell profile。
+所有变量已写入 `com.shirley.crypto-daily-bot.plist`，launchd 会自动注入，无需手动配置 shell profile。
 
 | 变量 | 说明 | 来源 |
 |------|------|------|
@@ -99,16 +99,16 @@ Crypto Daily/
 
 **手动运行（测试）**
 ```bash
-cd ~/Desktop/Crypto\ Daily
+cd ~/Desktop/Crypto\ Daily\ Bot
 /opt/homebrew/bin/python3.11 crypto_report.py
 ```
 
 **激活自动调度**
 ```bash
-cp com.shirley.crypto-daily.plist ~/Library/LaunchAgents/
-cp com.shirley.crypto-daily-health.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.shirley.crypto-daily.plist
-launchctl load ~/Library/LaunchAgents/com.shirley.crypto-daily-health.plist
+cp com.shirley.crypto-daily-bot.plist ~/Library/LaunchAgents/
+cp com.shirley.crypto-daily-bot-health.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist
+launchctl load ~/Library/LaunchAgents/com.shirley.crypto-daily-bot-health.plist
 ```
 
 **验证调度状态**

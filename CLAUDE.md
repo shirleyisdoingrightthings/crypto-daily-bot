@@ -1,4 +1,4 @@
-# Crypto Daily — Claude Code 专属上下文
+# Crypto Daily Bot — Claude Code 专属上下文
 
 > 完整操作手册见 [`AGENTS.md`](./AGENTS.md)（通用，适用于所有 AI 工具）。  
 > 本文件只记录 Claude Code 专属的额外指令。
