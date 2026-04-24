@@ -4,7 +4,7 @@ Crypto 市场晨报 — 每天早上 8:00 由 launchd 自动触发
 数据源：
   · CoinGecko: BTC/ETH/SOL/BNB/XRP/HYPE 价格、趋势币 Top5、全球市值、DeFi 数据、赛道热力图
   · alternative.me: 恐惧贪婪指数
-  · RSS × 4: Cointelegraph / CoinDesk / The Block / Decrypt
+  · RSS × 3: Cointelegraph / CoinDesk / Decrypt
 AI 输出：① 市场晨报（仪表盘+趋势+叙事）② 新闻播报列表
 推送：2 条 Telegram HTML 消息
 """
@@ -33,8 +33,9 @@ _PROXY = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
 SESSION = requests.Session()
 SESSION.proxies = {"http": _PROXY, "https": _PROXY}
 # feedparser 内部使用 urllib，通过环境变量注入代理
-os.environ.setdefault("HTTP_PROXY",  _PROXY)
-os.environ.setdefault("HTTPS_PROXY", _PROXY)
+if _PROXY:
+    os.environ.setdefault("HTTP_PROXY",  _PROXY)
+    os.environ.setdefault("HTTPS_PROXY", _PROXY)
 
 
 # ===== P1: 结构化日志 =====
@@ -59,7 +60,6 @@ COINGECKO_API_KEY  = os.getenv("COINGECKO_API_KEY",  "your_coingecko_demo_api_ke
 RSS_SOURCES = [
     ("https://cointelegraph.com/editors_pick_rss",     5),
     ("https://www.coindesk.com/arc/outboundfeeds/rss", 5),
-    ("https://www.theblock.co/rss.xml",                4),
     ("https://decrypt.co/feed",                        4),
 ]
 
@@ -516,7 +516,11 @@ def main() -> None:
         print("今天已成功运行过，跳过。如需强制执行请设置 FORCE_RUN=1。")
         return
 
-    flush_pending()
+    # 优先重发上次未发送的缓存消息（部分发送保护）
+    if flush_pending():
+        duration = round(time.time() - t0, 1)
+        write_log("OK", "缓存重发完成（上次部分发送）", metrics={"duration_s": duration, "ai_calls": 0})
+        return
 
     print("💰 抓取价格数据...")
     prices               = fetch_prices()
@@ -546,10 +550,13 @@ def main() -> None:
 
     print("\n📡 抓取 RSS 源...")
     all_entries = []
+    source_counts: dict = {}
     for feed_url, limit in RSS_SOURCES:
         entries = fetch_rss(feed_url, limit)
         all_entries.extend(entries)
+        source_counts[feed_url.split("/")[2]] = len(entries)
         print(f"  ✓ {len(entries)} 条  {feed_url}")
+    zero_sources = [d for d, c in source_counts.items() if c == 0]
 
     print(f"\n📰 共抓取 {len(all_entries)} 条，构建 context...")
     today        = datetime.now().strftime("%Y-%m-%d")
@@ -572,10 +579,10 @@ def main() -> None:
 
     print("\n📨 发送到 Telegram...")
     send_telegram(analysis)
+    save_pending([news_report])       # 消息①已发：更新缓存，防止重跑时重复推送
     send_telegram(news_report)
-    print("  ✓ 发送成功\n")
-
     CACHE_FILE.unlink(missing_ok=True)
+    print("  ✓ 发送成功\n")
 
     duration = round(time.time() - t0, 1)
     write_log(
@@ -587,6 +594,7 @@ def main() -> None:
             "bull_bear": global_mkt["bull_bear_label"],
             "trending_count": len(trending),
             "rss_fetched": len(all_entries), "rss_kept": news_count,
+            "rss_zero_sources": zero_sources,
             "ai_calls": 2, "duration_s": duration,
         },
     )
