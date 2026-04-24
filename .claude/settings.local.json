@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/opt/homebrew/bin/python3.11 '/Users/shirleywu/Desktop/Crypto Daily/crypto_report.py')"
+    ]
+  }
+}
