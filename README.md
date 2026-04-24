@@ -27,16 +27,12 @@
 ---
 
 ## Demo 预览
-
-- 🔗 **[点击此处查看交互式网页 Demo (Telegram 导出版)](https://shirleyisdoingrightthings.github.io/crypto-daily-bot/docs/demo/messages.html)**
-  *(注：开启 GitHub Pages 后即可访问，完美还原 Telegram 真实视觉体验)*
-- 📸 **截图概览**：
-
-| 市场分析报告 (消息①) | 加密市场新闻播报 (消息②) |
-| :---: | :---: |
-| ![市场仪表盘](./assets/demo_dashboard.png) | ![新闻详情](./assets/demo_news2.png) |
-
----
+ 
+ 以下为机器人推送到 Telegram 频道的真实运行效果（长图预览）：
+ 
+ ![Crypto Daily Bot 运行效果图](./assets/full_demo.png)
+ 
+ ---
 
 ## 系统架构与工作流
 
