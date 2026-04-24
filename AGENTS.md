@@ -20,7 +20,7 @@ CoinGecko /global/decentralized_finance_defi ─┤   │
 CoinGecko /coins/categories ─┤             │
 alternative.me /fng/       ─┘          ▼
                                   call_deepseek() × 2
-RSS × 4 源 ─────────────────────▶  ① PROMPT_ANALYSIS  ──▶  Telegram 消息①（市场晨报）
+RSS × 3 源 ─────────────────────▶  ① PROMPT_ANALYSIS  ──▶  Telegram 消息①（市场晨报）
                                    ② PROMPT_NEWS       ──▶  Telegram 消息②（新闻播报）
 ```
 
