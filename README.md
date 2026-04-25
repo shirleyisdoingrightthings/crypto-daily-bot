@@ -80,8 +80,12 @@ Crypto Daily Bot/
 ├── crypto_report.py                    # 主脚本（抓取 → 分析 → 推送）
 ├── health_check.sh                     # 健康检查（失败时触发 auto_repair）
 ├── auto_repair.sh                      # 薄包装：设置参数后委托 bot_ops/auto_repair_base.sh
-├── run.log                             # 单行摘要日志（人类可读，脚本运行后生成）
-├── run.jsonl                           # 结构化指标日志（程序可读，运行成功后生成）
+├── logs/                               # 所有日志集中存放
+│   ├── run.log                         # 单行摘要日志（人类可读）
+│   ├── run.jsonl                       # 结构化指标日志（程序可读）
+│   ├── launchd.log                     # launchd stdout/stderr
+│   ├── health_check.log               # health_check 运行日志
+│   └── .ok_streak                      # 连续成功计数
 ├── changelog.md                        # 问题追踪，与 health_check 联动
 ├── pending_messages.json               # Telegram 缓存（仅 Telegram 失败时存在）
 ├── AGENTS.md                           # 通用 AI 操作手册（适用于任意 AI 工具）
@@ -91,7 +95,7 @@ Crypto Daily Bot/
 └── README.md                           # 本文件（人类阅读）
 ```
 
-> `run.jsonl` 和 `pending_messages.json` 是运行时自动生成的，不会预置在文件夹中。  
+> `logs/` 目录下的文件均为运行时自动生成，不会预置在文件夹中。`pending_messages.json` 仅在 Telegram 发送失败时存在。  
 > `__pycache__/` 是 Python 自动创建的字节码缓存目录，可安全忽略，建议加入 `.gitignore`。
 
 ---
@@ -150,10 +154,10 @@ pip3.11 install requests feedparser openai
 ## 调试
 
 ```bash
-tail -5 run.log                          # 最近运行状态
-tail -3 run.jsonl | python3 -m json.tool # 结构化指标
-cat changelog.md                         # 当前问题清单
-bash health_check.sh                     # 手动触发健康检查
+tail -5 logs/run.log                          # 最近运行状态
+tail -3 logs/run.jsonl | python3 -m json.tool # 结构化指标
+cat changelog.md                              # 当前问题清单
+bash health_check.sh                          # 手动触发健康检查
 ```
 
 详细操作规范见 [`AGENTS.md`](./AGENTS.md)。
