@@ -1,28 +1,31 @@
 # Crypto Daily Bot
 
-每日自动从 CoinGecko、RSS 等数据源抓取加密市场信息，经 DeepSeek 分析后生成日报，推送到 Telegram。完全自治运行，无需人工干预。
+每天早上 8 点自动运行。拉取 6 大主流币实时价格、恐惧贪婪指数、赛道资金流向，加上 3 家加密媒体的当日头条，由 DeepSeek 生成一份市场晨报 + 新闻播报，直接推送到 Telegram。不用盯盘，不用刷信息流，每天开市前已经替你梳理好了。
 
 ---
 
-## 工作流亮点与数据源支撑
+## 核心特性
 
-- 🪙 **6 大主流币实时价格**：BTC / ETH / SOL / BNB / XRP / HYPE
-  *(API: CoinGecko `/simple/price`)*
-- 🔥 **今日热搜榜**：CoinGecko 搜索热度 Top 5，捕捉注意力流向
-  *(API: CoinGecko `/search/trending`)*
-- 🌐 **加密货币总市值**：总市值 / 24h 成交量 / BTC 市占率 → 牛熊判断
-  *(API: CoinGecko `/global`)*
-- 🏦 **DeFi 表现**：DeFi 总市值 / 24h 成交量 / DeFi 市占率及龙头
-  *(API: CoinGecko `/global/decentralized_finance_defi`)*
-- 🗺 **赛道表现 (24h 涨幅 Top 5)**：监控全市场各板块资金流入情况
-  *(API: CoinGecko `/coins/categories`)*
-- 🌡 **情绪指数**：恐惧贪婪指数实时追踪
-  *(API: alternative.me `/fng/`)*
-- 📰 **3 大媒体 RSS**：Cointelegraph、CoinDesk、Decrypt
-  *(API: Feedparser RSS 聚合)*
-- 🤖 **AI 深度分析**：DeepSeek 生成市场晨报 + 新闻播报（共 2 条消息）
-- 🔁 **自我修复**：失败时自动重试，持续故障调用 Claude CLI 自动修复代码
-- 📦 **消息降级保护**：AI 生成后立即缓存，发送失败下次自动重发
+**数据来源 — 价格、情绪、资金、新闻，四维覆盖**
+
+| 类型 | 数据源 |
+|------|------|
+| 实时价格 | BTC / ETH / SOL / BNB / XRP / HYPE（CoinGecko） |
+| 市场情绪 | 恐惧贪婪指数（alternative.me） |
+| 资金流向 | 总市值 / BTC 市占率 / DeFi 占比 / 24h 赛道涨幅 Top 5 |
+| 行业新闻 | Cointelegraph · CoinDesk · Decrypt |
+
+**内容处理 — 数据 + 叙事，不是数字堆砌**
+
+- **市场晨报**：价格 + 情绪 + 赛道三合一，DeepSeek 直接给出今日市场判断
+- **新闻播报**：筛选当日最值得关注的加密事件，带背景和影响分析
+- **双消息结构**：晨报和新闻分开推送，各自独立阅读，不互相干扰
+
+**稳定性 — 出了问题自己修**
+
+- 代理预检：启动时先验证网络可用，不通立即报错退出，不浪费等待时间
+- 两级自愈：瞬时故障等 30 秒重跑；持续故障调用 Claude CLI 自动诊断修复
+- 消息缓存：发送失败不丢消息，下次运行优先补发
 
 ---
 
