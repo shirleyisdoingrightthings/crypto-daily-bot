@@ -45,17 +45,16 @@
 
 ```
 【数据采集层】
-CoinGecko /simple/price  ──┐
-CoinGecko /search/trending ─┤
-CoinGecko /global          ─┼──▶ build_news_context()
-alternative.me /fng/       ─┤         │
-RSS × 3 源                 ─┘         ▼
-                                 call_deepseek() × 2
-                                 ┌─── ① PROMPT_ANALYSIS ──▶ 市场晨报
-                                 └─── ② PROMPT_NEWS     ──▶ 新闻播报
-                                           │
-                                           ▼
-                                      Telegram（2 条 HTML 消息）
+CoinGecko（价格 / 趋势币 / 总市值 / DeFi / 赛道热力图）──┐
+alternative.me（恐惧贪婪指数）                            ├──▶ build_news_context()
+RSS × 3（Cointelegraph / CoinDesk / Decrypt）             ┘         │
+                                                                     ▼
+                                                            call_deepseek() × 2
+                                                            ┌─── ① PROMPT_ANALYSIS ──▶ 市场晨报
+                                                            └─── ② PROMPT_NEWS     ──▶ 新闻播报
+                                                                        │
+                                                                        ▼
+                                                               Telegram（2 条 HTML 消息）
 
 【自动化调度】
 08:00  launchd ──▶ crypto_report.py ──▶ run.log [OK/FAIL]
