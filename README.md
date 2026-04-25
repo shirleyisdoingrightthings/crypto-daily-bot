@@ -92,6 +92,7 @@ Crypto Daily Bot/
 ├── CLAUDE.md                           # Claude Code 专属上下文（引用 AGENTS.md）
 ├── com.shirley.crypto-daily-bot.plist      # launchd 主脚本配置（08:00 触发）
 ├── com.shirley.crypto-daily-bot-health.plist  # launchd 健康检查配置（08:30 触发）
+├── requirements.txt                    # Python 依赖清单
 └── README.md                           # 本文件（人类阅读）
 ```
 
