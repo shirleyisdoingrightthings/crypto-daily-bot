@@ -24,8 +24,9 @@ from openai import OpenAI
 sys.path.insert(0, str(Path.home() / "Desktop" / "bot_ops" / "shared"))
 from bot_utils import sanitize_html, with_retry, fetch_rss, parse_entry_date, already_ran_today
 
-LOG_FILE   = Path(__file__).parent / "run.log"
-JSONL_FILE = Path(__file__).parent / "run.jsonl"
+LOG_FILE   = Path(__file__).parent / "logs" / "run.log"
+JSONL_FILE = Path(__file__).parent / "logs" / "run.jsonl"
+LOG_FILE.parent.mkdir(exist_ok=True)
 CACHE_FILE = Path(__file__).parent / "pending_messages.json"
 
 # ===== P0: 显式代理配置 =====
