@@ -35,7 +35,7 @@
  <summary>点击展开查看 Bot 推送到 Telegram 的长图预览</summary>
  <br>
  
- ![Crypto Daily Bot 运行效果图](./assets/full_demo.png)
+ ![Crypto Daily Bot 运行效果图](full_demo.png)
  
  </details>
  
