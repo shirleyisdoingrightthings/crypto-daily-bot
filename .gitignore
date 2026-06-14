@@ -5,6 +5,7 @@ __pycache__/
 
 # 运行时生成文件（不纳入版本控制）
 logs/
+*.log
 pending_messages.json
 
 # 敏感信息（plist 中含 API Key，不应上传）
