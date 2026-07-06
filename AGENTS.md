@@ -65,7 +65,7 @@ RSS × 3 源 ─────────────────────▶ 
 | `logs/health_check.log` | health_check 运行日志 | 每日写入 |
 | `changelog.md` | 问题追踪，与 health_check 联动 | 按需 |
 | `pending_messages.json` | Telegram 发送缓存（降级保护） | 临时 |
-| `com.shirley.crypto-daily-bot.plist` | 主脚本 launchd 配置 | 极少 |
+| `com.shirley.crypto-daily-bot.plist.example` | 主脚本 launchd 配置模板（正式配置在 `~/Library/LaunchAgents/`，是端口/密钥的唯一权威源，`catchup.sh` 也读它） | 极少 |
 | `com.shirley.crypto-daily-bot-health.plist` | health_check launchd 配置 | 极少 |
 
 ---
@@ -107,6 +107,7 @@ BTC 和 ETH 价格同时为「未知」时，跳过本次发送（`write_log("WA
 
 ### 代理
 - 固定走 `127.0.0.1:YOUR_PORT` (本地代理端口)
+- 端口在 `~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist` 的 `HTTP_PROXY`/`HTTPS_PROXY` 里配置（唯一权威源）；改完 `launchctl unload && launchctl load` 重载
 - `requests` 通过 `SESSION` 显式配置，`feedparser` 通过 `HTTP_PROXY` 环境变量
 
 ### 重试策略

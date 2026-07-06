@@ -530,7 +530,7 @@ def main() -> None:
     # 代理预检：快速验证代理可用，失败立即退出
     if _PROXY:
         try:
-            SESSION.get("https://www.google.com", timeout=5)
+            SESSION.get("https://www.gstatic.com/generate_204", timeout=5)
         except Exception:
             write_log("WARN", f"代理不可用（{_PROXY}），跳过本次运行")
             return

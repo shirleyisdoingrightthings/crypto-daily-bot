@@ -4,12 +4,13 @@
 # 用途：8:00 的 launchd 定时若因为电脑睡眠/未开机而漏跑，
 #       由 Claude Routine 在上午调用本脚本补跑一次。
 # 幂等：当天 run.log 已有 [OK] 则跳过，避免重复推送。
-# 密钥：运行时从现有 launchd plist 读取环境变量，脚本本身不含密钥。
+# 密钥：运行时从 launchd 实际加载的 plist 读取环境变量，脚本本身不含密钥。
+#       复用 ~/Library/LaunchAgents 那份权威副本，避免与目录内副本端口/密钥不一致。
 
 set -uo pipefail
 cd "$(dirname "$0")" || exit 1
 
-PLIST="com.shirley.crypto-daily-bot.plist"
+PLIST="$HOME/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist"
 PYFILE="crypto_report.py"
 PY="/usr/bin/python3"
 TODAY="$(date +%Y-%m-%d)"

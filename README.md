@@ -92,7 +92,7 @@ Crypto Daily Bot/
 ├── pending_messages.json               # Telegram 缓存（仅 Telegram 失败时存在）
 ├── AGENTS.md                           # 通用 AI 操作手册（适用于任意 AI 工具）
 ├── CLAUDE.md                           # Claude Code 专属上下文（引用 AGENTS.md）
-├── com.shirley.crypto-daily-bot.plist      # launchd 主脚本配置（08:00 触发）
+├── com.shirley.crypto-daily-bot.plist.example  # 主脚本 launchd 配置模板（正式配置在 ~/Library/LaunchAgents/）
 ├── com.shirley.crypto-daily-bot-health.plist  # launchd 健康检查配置（08:30 触发）
 ├── requirements.txt                    # Python 依赖清单
 └── README.md                           # 本文件（人类阅读）
@@ -105,7 +105,7 @@ Crypto Daily Bot/
 
 ## 环境变量
 
-所有变量已写入 `com.shirley.crypto-daily-bot.plist`，launchd 会自动注入，无需手动配置 shell profile。
+所有变量写在**唯一权威配置源** `~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist` 中，launchd 定时与 `catchup.sh` 补跑都从这里读取并自动注入，无需手动配置 shell profile。仓库内只保留 `com.shirley.crypto-daily-bot.plist.example` 模板（不含密钥）。修改端口/密钥请直接编辑 LaunchAgents 里那份，然后 `launchctl unload && launchctl load` 重新加载。
 
 | 变量 | 说明 | 来源 |
 |------|------|------|
@@ -127,15 +127,16 @@ cd ~/Desktop/Crypto\ Daily\ Bot
 
 **激活自动调度**
 
-1. 将样板文件拷贝为正式配置文件：
+1. 将样板文件直接拷贝到 LaunchAgents 作为正式配置（单一权威源，不在项目目录留副本）：
 ```bash
-cp com.shirley.crypto-daily-bot.plist.example com.shirley.crypto-daily-bot.plist
+cp com.shirley.crypto-daily-bot.plist.example ~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist
 ```
-2. **重要**：编辑 `com.shirley.crypto-daily-bot.plist`，填入你的 API Key、路径和代理端口。
-3. 加载任务：
+2. **重要**：编辑 `~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist`，填入你的 API Key、路径和代理端口。以后改端口/密钥也改这一份。
+3. 拷贝健康检查配置并加载两个任务：
 ```bash
-cp *.plist ~/Library/LaunchAgents/
+cp com.shirley.crypto-daily-bot-health.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist
+launchctl load ~/Library/LaunchAgents/com.shirley.crypto-daily-bot-health.plist
 ```
 
 **验证调度状态**
