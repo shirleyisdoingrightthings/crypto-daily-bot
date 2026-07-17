@@ -1,19 +1,18 @@
-#!/opt/homebrew/bin/python3.11
+#!/usr/bin/python3
 """
 Crypto 市场晨报
 数据源：
   · CoinGecko: BTC/ETH/SOL/BNB/XRP/HYPE 价格、趋势币 Top5、全球市值、DeFi 数据、赛道热力图
   · alternative.me: 恐惧贪婪指数
-  · RSS × 3: Cointelegraph / CoinDesk / Decrypt
-AI 输出：① 市场晨报（仪表盘+趋势+叙事）② 新闻播报列表
-推送：2 条 Telegram HTML 消息
+  · RSS × 3: Cointelegraph / CoinDesk / Decrypt（新闻 best-effort 抓正文全文，失败回退摘要）
+由 Claude 写稿：① 市场晨报（仪表盘+趋势+叙事）② 新闻播报列表，推送 2 条 Telegram HTML 消息。
+本脚本只负责抓取与发送，不含写稿用的第三方大模型 API。
 
-三种运行模式（--mode，默认 full 以保持向后兼容）：
-- full ：抓取 → DeepSeek 并行写两稿 → 发送（无头兜底，launchd 使用，需 DEEPSEEK_API_KEY）
-- fetch：抓取全部行情+新闻 → 把 context 打到 stdout + 写 logs/fetch_meta.json（零 API 成本，供 Claude 写稿）
-- send ：读取两份稿子文件 → 依次发送 Telegram + 写日志（零 API 成本，供 Claude 发稿）
+两种运行模式（--mode，均零 API 成本）：
+- fetch：抓取全部行情+新闻（含抓正文）→ 把 context 打到 stdout + 写 logs/fetch_meta.json（供 Claude 写稿）
+- send ：读取 Claude 写好的两份稿子 → 依次发送 Telegram + 写日志
 
-写稿规范统一存放于 prompt_analysis.md（消息①）与 prompt_news.md（消息②），full 与 Claude routine 共用。
+写稿规范存放于 prompt_analysis.md（消息①）与 prompt_news.md（消息②），由 Claude routine 读取。
 """
 
 import os
@@ -26,7 +25,6 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from openai import OpenAI
 
 # 共享工具库
 sys.path.insert(0, str(Path.home() / "Desktop" / "bot_ops" / "shared"))
@@ -38,9 +36,6 @@ JSONL_FILE = Path(__file__).parent / "logs" / "run.jsonl"
 LOG_FILE.parent.mkdir(exist_ok=True)
 CACHE_FILE = Path(__file__).parent / "pending_messages.json"
 
-# 写稿规范（单一权威源，full 与 Claude routine 共用）
-PROMPT_ANALYSIS_FILE = Path(__file__).parent / "prompt_analysis.md"
-PROMPT_NEWS_FILE     = Path(__file__).parent / "prompt_news.md"
 # Claude routine 把写好的两份稿子分别存到这里，再用 --mode send 发送
 DRAFT_ANALYSIS = Path(__file__).parent / "logs" / "report_analysis.txt"   # 消息①市场晨报
 DRAFT_NEWS     = Path(__file__).parent / "logs" / "report_news.txt"       # 消息②新闻播报
@@ -71,7 +66,6 @@ def write_log(status: str, message: str, metrics: dict = None) -> None:
 
 
 # ===== 配置 =====
-DEEPSEEK_API_KEY   = os.getenv("DEEPSEEK_API_KEY",   "your_deepseek_api_key")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "your_telegram_bot_token")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID",   "your_telegram_chat_id")
 COINGECKO_API_KEY  = os.getenv("COINGECKO_API_KEY",  "your_coingecko_demo_api_key")
@@ -81,17 +75,6 @@ RSS_SOURCES = [
     ("https://www.coindesk.com/arc/outboundfeeds/rss", 5),
     ("https://decrypt.co/feed",                        4),
 ]
-
-def load_prompt_analysis() -> str:
-    """消息①市场晨报的写稿规范（full 与 Claude routine 共用 prompt_analysis.md）。"""
-    return PROMPT_ANALYSIS_FILE.read_text(encoding="utf-8")
-
-
-
-def load_prompt_news() -> str:
-    """消息②新闻播报的写稿规范（full 与 Claude routine 共用 prompt_news.md）。"""
-    return PROMPT_NEWS_FILE.read_text(encoding="utf-8")
-
 
 # ===== P2: 消息缓存（降级策略）=====
 def save_pending(messages: list) -> None:
@@ -374,26 +357,6 @@ def build_news_context(
     return market_header + "\n".join(news_lines)
 
 
-# ===== P0: DeepSeek 调用（超时 + 重试）=====
-@with_retry(max_retries=2, base_delay=10, exceptions=(Exception,))
-def call_deepseek(system_prompt: str, user_content: str) -> str:
-    client = OpenAI(
-        api_key=DEEPSEEK_API_KEY,
-        base_url="https://api.deepseek.com",
-        timeout=60.0,
-        max_retries=0,
-    )
-    resp = client.chat.completions.create(
-        model="deepseek-chat",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_content},
-        ],
-        temperature=0.4,
-    )
-    return resp.choices[0].message.content
-
-
 # ===== P0: 发送 Telegram（单块重试 + 整体分块）=====
 @with_retry(max_retries=3, base_delay=5, exceptions=(requests.RequestException,))
 def _send_one(chunk: str) -> None:
@@ -512,7 +475,7 @@ def gather() -> dict:
 
 
 def _summary_and_metrics(data: dict) -> tuple:
-    """由 gather 结果构造 OK 日志摘要与 health_check 所需 metrics（run_full 与 fetch 边车共用）。"""
+    """由 gather 结果构造 OK 日志摘要与 health_check 所需 metrics（fetch 边车用）。"""
     prices = data["prices"]
     g      = data["global_mkt"]
     summary = (
@@ -611,70 +574,19 @@ def run_send() -> int:
     return 0
 
 
-# ===== 模式 3：full — 抓取 → DeepSeek 并行写两稿 → 发送（无头兜底，向后兼容）=====
-def run_full() -> None:
-    t0 = time.time()
-
-    if already_ran_today(LOG_FILE):
-        print("今天已成功运行过，跳过。如需强制执行请设置 FORCE_RUN=1。")
-        return
-
-    if flush_pending():
-        duration = round(time.time() - t0, 1)
-        write_log("OK", "缓存重发完成（上次部分发送）", metrics={"duration_s": duration, "ai_calls": 0})
-        return
-
-    if not _proxy_ok():
-        write_log("WARN", f"代理不可用（{_PROXY}），跳过本次运行")
-        return
-
-    data = gather()
-    if data is None:
-        write_log("WARN", "CoinGecko 核心价格数据全部失败，跳过本次发送，等待下次运行")
-        return
-
-    print("\n🤖 并行生成市场分析报告（消息①）+ 新闻播报列表（消息②）...")
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        fut_analysis = executor.submit(call_deepseek, load_prompt_analysis(), data["news_context"])
-        fut_news     = executor.submit(call_deepseek, load_prompt_news(), f"今天日期：{data['today']}\n\n{data['news_context']}")
-        analysis    = fut_analysis.result()
-        news_report = fut_news.result()
-    print("  ✓ 两份报告均已完成")
-
-    save_pending([analysis, news_report])
-
-    print("\n📨 发送到 Telegram...")
-    send_telegram(analysis)
-    save_pending([news_report])       # 消息①已发：更新缓存，防止重跑时重复推送
-    send_telegram(news_report)
-    CACHE_FILE.unlink(missing_ok=True)
-    print("  ✓ 发送成功\n")
-
-    summary, metrics = _summary_and_metrics(data)
-    duration = round(time.time() - t0, 1)
-    write_log(
-        "OK",
-        f"{summary} → Telegram发送成功",
-        metrics={**metrics, "ai_calls": 2, "duration_s": duration},
-    )
-
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Crypto 市场晨报")
     parser.add_argument(
-        "--mode", choices=["full", "fetch", "send"], default="full",
-        help="full=DeepSeek全流程(默认,向后兼容) / fetch=只抓取输出context / send=只发送两稿",
+        "--mode", choices=["fetch", "send"], required=True,
+        help="fetch=抓取并输出 context（供 Claude 写稿，零 API）/ send=发送 Claude 写好的两稿",
     )
     parsed = parser.parse_args()
 
     try:
         if parsed.mode == "fetch":
             sys.exit(run_fetch())
-        elif parsed.mode == "send":
-            sys.exit(run_send())
         else:
-            run_full()
+            sys.exit(run_send())
     except Exception:
         err = traceback.format_exc().strip().splitlines()[-1]
         write_log("FAIL", err)

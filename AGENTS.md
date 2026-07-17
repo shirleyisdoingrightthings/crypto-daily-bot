@@ -7,31 +7,36 @@
 
 ## 工作流概述
 
-这是一个 **加密市场日报系统**。主脚本 `crypto_report.py` 每天由 launchd 自动触发，负责聚合行情数据与新闻并生成深度市场报告。
+这是一个 **加密市场日报系统**。每早由本地 Claude 定时任务触发：`crypto_report.py --mode fetch` 聚合行情+新闻（新闻 best-effort 抓正文全文，失败回退 RSS 摘要）→ Claude 按 prompt 写两稿 → `crypto_report.py --mode send` 依次推送。脚本本身只做抓取与发送，零第三方大模型 API。
 
 ### 数据流
 
 ```
-[数据源]                             [处理]              [输出]
+[数据源]                             [抓取 / 写稿]                     [输出]
 CoinGecko /simple/price  ──┐
 CoinGecko /search/trending ─┤
-CoinGecko /global          ─┼──▶  build_news_context()
-CoinGecko /global/decentralized_finance_defi ─┤   │
-CoinGecko /coins/categories ─┤             │
-alternative.me /fng/       ─┘          ▼
-                                  call_deepseek() × 2
-RSS × 3 源 ─────────────────────▶  ① PROMPT_ANALYSIS  ──▶  Telegram 消息①（市场晨报）
-                                   ② PROMPT_NEWS       ──▶  Telegram 消息②（新闻播报）
+CoinGecko /global          ─┼──▶ crypto_report.py --mode fetch
+CoinGecko /.../defi         ─┤        │  build_news_context()
+CoinGecko /coins/categories ─┤        │  ├─ 并发 best-effort 抓正文全文
+alternative.me /fng/       ─┘        │  └─ 抓不到 → 回退 RSS 摘要
+RSS × 3 源 ──────────────────────────▼
+                              Claude 按 prompt 写两稿
+                              ├─ prompt_analysis.md → logs/report_analysis.txt（消息①）
+                              └─ prompt_news.md     → logs/report_news.txt（消息②）
+                                      │
+                                      ▼
+                              crypto_report.py --mode send ──▶ Telegram（2 条 HTML 消息）
 ```
 
 ### 自动化调度
 
 ```
-08:00  launchd → crypto_report.py
+09:53  Claude 定时任务（唯一写稿入口）
+         claude_report.sh fetch → Claude 写两稿 → claude_report.sh send
                        │
                   run.log [OK/FAIL]
 
-08:30  launchd → health_check.sh
+11:00  launchd → health_check.sh
                        │
            ┌── [OK] ───┴── .ok_streak +1
            │                streak ≥ 3 → 删除 changelog 中 [x] 条目
@@ -54,19 +59,23 @@ RSS × 3 源 ─────────────────────▶ 
 
 | 文件 | 职责 | 修改频率 |
 |------|------|---------|
-| `crypto_report.py` | 主脚本：抓取→生成→推送 | 偶尔 |
+| `crypto_report.py` | 主脚本：`--mode fetch`（抓行情+新闻+抓正文）/ `send`（清洗+依次推送两稿），零第三方大模型 API | 偶尔 |
+| `claude_report.sh` | 供 Claude 定时任务调用的 fetch/send 封装（从 plist 加载环境变量） | 极少 |
+| `prompt_analysis.md` / `prompt_news.md` | 消息①/② 的写稿规范（唯一权威源，Claude 依此写稿） | 偶尔 |
 | `health_check.sh` | 按日期检查今天 [OK]/[FAIL] 状态，含 60s 等待防竞态；BTC 数据质量通知；触发 auto_repair | 极少 |
-| `~/Desktop/bot_ops/shared/bot_utils.py` | 共享工具库（两个 Bot 共用）：sanitize_html / with_retry / fetch_rss / parse_entry_date / already_ran_today | 偶尔 |
+| `~/Desktop/bot_ops/shared/bot_utils.py` | 共享工具库（两个 Bot 共用）：sanitize_html / with_retry / fetch_rss / parse_entry_date / already_ran_today / fetch_article_text（抓正文） | 偶尔 |
 | `auto_repair.sh` | 薄包装：设置 BOT_NAME/SCRIPT/ERROR，委托 `bot_ops/auto_repair_base.sh` 执行 | 极少 |
 | `~/Desktop/bot_ops/auto_repair_base.sh` | 共享修复逻辑（Level 1 重跑 / Level 2 Claude CLI）；两个 Bot 共用 | 极少 |
+| `logs/report_analysis.txt` / `logs/report_news.txt` | 当日 Claude 写好的两稿（send 读取后推送） | 每日写入 |
+| `logs/fetch_meta.json` | fetch 边车：日志摘要 + 指标（send 回填，供体检监控） | 每日写入 |
 | `logs/run.log` | 单行摘要日志（人类可读） | 每日写入 |
 | `logs/run.jsonl` | 结构化指标（程序可读） | 每日写入 |
 | `logs/launchd.log` | launchd 的 stdout/stderr | 每日写入 |
 | `logs/health_check.log` | health_check 运行日志 | 每日写入 |
 | `changelog.md` | 问题追踪，与 health_check 联动 | 按需 |
 | `pending_messages.json` | Telegram 发送缓存（降级保护） | 临时 |
-| `com.shirley.crypto-daily-bot.plist.example` | 主脚本 launchd 配置模板（正式配置在 `~/Library/LaunchAgents/`，是端口/密钥的唯一权威源，`catchup.sh` 也读它） | 极少 |
-| `com.shirley.crypto-daily-bot-health.plist` | health_check launchd 配置 | 极少 |
+| `com.shirley.crypto-daily-bot.plist.example` | 主 plist 模板（正式配置在 `~/Library/LaunchAgents/`，是端口/密钥的唯一权威源，`claude_report.sh` 从中读环境变量） | 极少 |
+| `com.shirley.crypto-daily-bot-health.plist` | health_check launchd 配置（11:00 触发） | 极少 |
 
 ---
 
@@ -83,6 +92,7 @@ RSS × 3 源 ─────────────────────▶ 
 | CoinGecko | `/coins/categories` | 赛道表现（24h 涨幅 Top 5） | Demo 免费 |
 | alternative.me | `/fng/` | 恐惧贪婪指数 | 完全免费 |
 | RSS × 3 | Cointelegraph / CoinDesk / Decrypt | 新闻 | 免费 |
+| 正文抓取 | 各新闻源文章页 | best-effort 抓正文（JSON-LD `articleBody` / `<p>`），失败回退 RSS 摘要 | 零依赖 |
 
 ### 日志格式（不得改动）
 ```
@@ -112,14 +122,14 @@ BTC 和 ETH 价格同时为「未知」时，跳过本次发送（`write_log("WA
 
 ### 重试策略
 - Telegram：最多 3 次，指数退避（5 → 10 → 20s）
-- DeepSeek API：最多 2 次，指数退避（10 → 20s）
-- `OpenAI` 客户端的 `max_retries=0`，由外层装饰器统一控制
+- RSS 抓取（fetch_rss）：最多 2 次，退避 3 → 6s
+- 正文抓取（fetch_article_text）：best-effort、单次、失败即回退 RSS 摘要，不重试
 
 ### 消息缓存降级与部分发送保护
-- AI 生成完成后立即写 `pending_messages.json`（含消息①和②）
-- 消息①发送成功后立即更新缓存为 `[消息②]`，防止重跑时重发消息①
-- 全部发送成功后删除缓存文件
-- 下次启动时 `flush_pending()` 只重发剩余未发消息；重发成功后直接写 `[OK]` 并退出，不重新抓取数据
+- send 模式发送前把两稿写入 `pending_messages.json`；代理不可用时也缓存
+- 消息①发送成功后立即把缓存更新为 `[消息②]`（同一次运行内的部分发送保护）
+- 两稿全部发送成功后删除缓存文件
+- 缓存用于避免内容丢失（可人工恢复），当前 Claude 流程不做自动重发
 
 ### 分源零条监控
 - 每次运行将各 RSS 源抓取数写入 JSONL 的 `rss_zero_sources` 字段
@@ -157,8 +167,9 @@ cat changelog.md
 # 查看 launchd 原始输出
 tail -20 logs/launchd.log
 
-# 手动运行主脚本
-/opt/homebrew/bin/python3.11 crypto_report.py
+# 手动抓取 / 发送（Claude 定时任务用同一封装）
+bash claude_report.sh fetch     # 抓行情+新闻+抓正文，输出写稿素材
+bash claude_report.sh send      # 读取两稿并依次推送
 
 # 手动运行健康检查
 bash health_check.sh

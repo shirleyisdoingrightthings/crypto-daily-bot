@@ -2,7 +2,7 @@
 # claude_report.sh — 供 Claude routine 调用的 fetch/send 封装
 #
 # 用途：把 launchd plist 里的环境变量（代理、Telegram token、CoinGecko key）加载好，
-#       再以指定模式运行 crypto_report.py。与 catchup.sh 同一套密钥来源，
+#       再以指定模式运行 crypto_report.py。密钥统一来自 LaunchAgents 权威 plist，
 #       避免在 routine prompt 里重复贴 PlistBuddy 逻辑。
 # 用法：
 #   bash claude_report.sh fetch   # 抓取行情+新闻并把 context 打到 stdout（供 Claude 写两稿）
