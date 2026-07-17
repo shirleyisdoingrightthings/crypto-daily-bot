@@ -30,7 +30,8 @@ from openai import OpenAI
 
 # 共享工具库
 sys.path.insert(0, str(Path.home() / "Desktop" / "bot_ops" / "shared"))
-from bot_utils import sanitize_html, with_retry, fetch_rss, parse_entry_date, already_ran_today
+from bot_utils import (sanitize_html, with_retry, fetch_rss, parse_entry_date,
+                       already_ran_today, fetch_article_text)
 
 LOG_FILE   = Path(__file__).parent / "logs" / "run.log"
 JSONL_FILE = Path(__file__).parent / "logs" / "run.jsonl"
@@ -302,7 +303,7 @@ def build_news_context(
     now        = datetime.now(timezone.utc)
     time_limit = now - timedelta(days=3)
     seen_urls: set = set()
-    news_lines = []
+    picked = []   # (title, url, url_lower, media, snippet)
 
     for entry in entries:
         title = getattr(entry, "title", None)
@@ -323,10 +324,21 @@ def build_news_context(
             media = "CoinDesk"
         else:
             media = url_lower.split("/")[2] if "/" in url_lower else url_lower
-        news_lines.append(
-            f"[原始英文标题] {title}\n[链接] {original_url}\n"
-            f"[媒体] {media}\n[摘要] {snippet[:200]}\n----"
-        )
+        picked.append((title, original_url, url_lower, media, snippet))
+
+    # best-effort 并发抓正文全文；失败/被墙/过短回退 RSS 摘要
+    # （CoinDesk 的 RSS 摘要常为空，全文抓取收益最大）。全程零 API、纯 HTTP。
+    def _news_material(item):
+        title, url, url_lower, media, snippet = item
+        body = fetch_article_text(url)
+        text = body if body else snippet[:500]
+        src  = "正文" if body else "摘要"
+        return f"[原始英文标题] {title}\n[链接] {url}\n[媒体] {media}\n[正文/摘要（{src}）] {text}\n----"
+
+    news_lines = []
+    if picked:
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            news_lines = list(ex.map(_news_material, picked))
 
     trend_str = "  ".join(
         f"{t['name']}({t['symbol']}) {t['change']} [#{t['rank']}]"
