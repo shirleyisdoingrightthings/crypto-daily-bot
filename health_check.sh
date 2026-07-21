@@ -63,8 +63,11 @@ if [ "$STATUS" = "FAIL" ]; then
     exit 2
 
 elif [ "$STATUS" = "MISSING" ]; then
-    osascript -e 'display notification "今天主脚本未运行，请检查 launchd 配置" with title "⚠️ Crypto Daily Bot"'
-    echo "[health_check] WARN: 今天（$TODAY）无任何运行记录，人工介入"
+    # 08:30 routine 今天未运行（机器睡眠 / App 未开等）
+    # → 触发无头补跑（自动版 Run Now），由 claude CLI 完整重走 fetch → 写稿 → send
+    osascript -e 'display notification "今天主脚本未运行，已触发无头补跑" with title "⚠️ Crypto Daily Bot"'
+    echo "[health_check] WARN: 今天（$TODAY）无任何运行记录，触发无头补跑..."
+    bash "$DIR/claude_catchup.sh" &
     exit 1
 fi
 

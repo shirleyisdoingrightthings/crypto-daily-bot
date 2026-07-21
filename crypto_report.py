@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # 共享工具库
-sys.path.insert(0, str(Path.home() / "Desktop" / "bot_ops" / "shared"))
+sys.path.insert(0, str(Path.home() / "bots" / "shared"))
 from bot_utils import (sanitize_html, with_retry, fetch_rss, parse_entry_date,
                        already_ran_today, fetch_article_text)
 

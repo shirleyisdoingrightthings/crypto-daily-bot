@@ -1,37 +1,44 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.EN">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+<!--
+    配置模板：复制为 ~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist 并填入真实值。
+
+    ⚠️ 本 plist 不承担任何调度职责（2026-07-20 移除了 09:15 launchd 兜底，
+    失败兜底由 09:45 health_check + auto_repair 承担）。它只是环境变量的
+    唯一权威配置源：claude_report.sh 通过 PlistBuddy 从 EnvironmentVariables
+    读取密钥/代理，08:30 Claude 定时任务依赖它。ProgramArguments 固定为
+    /usr/bin/true，仅为满足 launchd 对 plist 结构的要求，永远不会被触发。
+-->
 <dict>
     <key>Label</key>
     <string>com.shirley.crypto-daily-bot</string>
+
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
-        <string>/Users/YOUR_NAME/Desktop/Crypto Daily Bot/crypto_report.py</string>
+        <string>/usr/bin/true</string>
     </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
     <key>EnvironmentVariables</key>
     <dict>
+        <!-- ⚠️ 填入你的真实密钥 -->
         <key>TELEGRAM_BOT_TOKEN</key>
         <string>YOUR_TELEGRAM_TOKEN_HERE</string>
+
         <key>TELEGRAM_CHAT_ID</key>
         <string>YOUR_CHAT_ID_HERE</string>
+
         <key>COINGECKO_API_KEY</key>
         <string>YOUR_COINGECKO_KEY_HERE</string>
+
+        <!-- 本地代理地址 -->
         <key>HTTPS_PROXY</key>
         <string>http://127.0.0.1:YOUR_PORT</string>
         <key>HTTP_PROXY</key>
         <string>http://127.0.0.1:YOUR_PORT</string>
     </dict>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>8</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
-    <key>StandardOutPath</key>
-    <string>/Users/YOUR_NAME/Desktop/Crypto Daily Bot/launchd.log</string>
-    <key>StandardErrorPath</key>
-    <string>/Users/YOUR_NAME/Desktop/Crypto Daily Bot/launchd.log</string>
 </dict>
 </plist>

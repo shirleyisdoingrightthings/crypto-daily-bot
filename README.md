@@ -29,8 +29,9 @@
 
 **稳定性 — 出了问题自己修**
 
-- 每日体检：11:00 检查当天是否成功出稿，异常自动记 changelog 并触发自愈
+- 每日体检：09:45 检查当天是否成功出稿，异常自动记 changelog 并触发自愈
 - 两级自愈：瞬时故障等 30 秒重跑；持续故障调用 Claude CLI 诊断修复
+- 无头补跑：当天根本没出稿（机器睡眠错过 08:30）或自愈无效时，claude CLI 自动完整重走一遍流程（自动版 Run Now）
 - 消息缓存：发送失败 / 代理不可用时，把两稿缓存到 pending_messages.json，避免内容丢失
 
 ---
@@ -68,17 +69,21 @@ RSS × 3（Cointelegraph / CoinDesk / Decrypt）             ┘     │  build_
                                                      Telegram（2 条 HTML 消息）
 
 【自动化调度】
-09:53  Claude 定时任务（唯一写稿入口）
+08:30  Claude 定时任务（唯一写稿入口）
          └─ claude_report.sh fetch → Claude 写两稿 → claude_report.sh send → run.log [OK/FAIL]
 
-11:00  launchd ──▶ health_check.sh
+09:45  launchd ──▶ health_check.sh
                         │
-                  [OK] ──┴── .ok_streak +1（连续 3 次后清理已解决的 changelog 条目）
+                  [OK] ──┼── .ok_streak +1（连续 3 次后清理已解决的 changelog 条目）
+                        │
+                  [无记录] ── claude_catchup.sh 无头补跑（自动版 Run Now：
+                        │       claude CLI 完整重走 fetch → 写两稿 → send，同一天只补跑一次）
                         │
                   [FAIL] ── changelog 新增条目
-                        └──▶ auto_repair.sh（后台运行）
-                                  ├─ Level 1：等 30s 直接重跑（瞬时网络错误）
-                                  └─ Level 2：claude CLI 诊断修复 → 重跑
+                        └──▶ auto_repair.sh（后台运行；缺当日稿件时直接转无头补跑）
+                                  ├─ Level 1：等 30s 重跑 send（瞬时网络错误）
+                                  ├─ Level 2：claude CLI 诊断修复 → 重跑 send
+                                  └─ 最终兜底：claude_catchup.sh 无头补跑
                                               ├─ 成功 → changelog 标记 [x]
                                               └─ 失败 → macOS 通知，需人工介入
 ```
@@ -90,8 +95,9 @@ RSS × 3（Cointelegraph / CoinDesk / Decrypt）             ┘     │  build_
 ## 文件结构
 
 ```
-~/Desktop/bot_ops/shared/bot_utils.py     # 外部共享工具库（含抓正文 fetch_article_text，与 AI Daily News Bot 共用）
-~/Desktop/bot_ops/auto_repair_base.sh     # 外部共享修复逻辑（与 AI Daily News Bot 共用）
+~/bots/shared/bot_utils.py     # 外部共享工具库（含抓正文 fetch_article_text，与 AI Daily News Bot 共用）
+~/bots/shared/auto_repair_base.sh         # 共享修复逻辑（与 AI Daily News Bot 共用，2026-07 从 ~/Desktop/bot_ops/ 迁入并修复重跑缺陷）
+~/bots/shared/headless_catchup_base.sh    # 共享无头补跑逻辑（自动版 Run Now，与 AI Daily News Bot 共用）
 
 Crypto Daily Bot/
 ├── crypto_report.py                   # 主脚本：--mode fetch（抓行情+新闻+抓正文）/ send（清洗+依次推送两稿）
@@ -99,22 +105,23 @@ Crypto Daily Bot/
 ├── prompt_analysis.md                 # 消息①市场晨报的写稿规范（唯一权威源）
 ├── prompt_news.md                     # 消息②新闻播报的写稿规范（唯一权威源）
 ├── health_check.sh                    # 健康检查（失败时触发 auto_repair）
-├── auto_repair.sh                     # 薄包装：设置参数后委托 bot_ops/auto_repair_base.sh
+├── auto_repair.sh                     # 薄包装：设置参数后委托 ~/bots/shared/auto_repair_base.sh
+├── claude_catchup.sh                  # 薄包装：无头补跑（委托 ~/bots/shared/headless_catchup_base.sh）
 ├── logs/                              # 所有日志与产物集中存放（运行时生成）
 │   ├── report_analysis.txt           # 当日 Claude 写好的消息①（send 读取）
 │   ├── report_news.txt               # 当日 Claude 写好的消息②（send 读取）
 │   ├── fetch_meta.json               # fetch 边车：日志摘要 + 指标（send 回填，供体检监控）
 │   ├── run.log                        # 单行摘要日志（人类可读）
 │   ├── run.jsonl                      # 结构化指标日志（程序可读）
-│   ├── launchd.log                    # launchd stdout/stderr
+│   ├── launchd.log                    # （历史）旧 09:15 launchd 兜底的输出，兜底已移除，不再写入
 │   ├── health_check.log              # health_check 运行日志
 │   └── .ok_streak                     # 连续成功计数
 ├── changelog.md                       # 问题追踪，与 health_check 联动
 ├── pending_messages.json              # Telegram 缓存（仅发送失败时存在）
 ├── AGENTS.md                          # 通用 AI 操作手册（适用于任意 AI 工具）
 ├── CLAUDE.md                          # Claude Code 专属上下文（引用 AGENTS.md）
-├── com.shirley.crypto-daily-bot.plist.example        # 主 plist 模板（正式配置在 ~/Library/LaunchAgents/，是端口/密钥的唯一权威源）
-├── com.shirley.crypto-daily-bot-health.plist         # health_check launchd 配置（11:00 触发）
+├── com.shirley.crypto-daily-bot.plist.example        # 环境变量 plist 模板（正式配置在 ~/Library/LaunchAgents/，是端口/密钥的唯一权威源；不含调度，09:15 launchd 兜底已于 2026-07 移除）
+├── com.shirley.crypto-daily-bot-health.plist         # health_check launchd 配置（09:45 触发）
 ├── requirements.txt                   # Python 依赖清单
 └── README.md                          # 本文件（人类阅读）
 ```
@@ -125,7 +132,9 @@ Crypto Daily Bot/
 
 ## 环境变量
 
-所有变量写在**唯一权威配置源** `~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist` 中，`claude_report.sh` 从这里读取并自动注入。仓库内只保留 `.plist.example` 模板（不含密钥）。改端口/密钥请直接编辑 LaunchAgents 里那份。
+所有变量写在**唯一权威配置源** `~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist` 中，`claude_report.sh` 从这里读取并自动注入。仓库内只保留 `.plist.example` 模板（不含密钥）。改端口/密钥请直接编辑 LaunchAgents 里那份，改完即生效（`claude_report.sh` 每次运行时直接读文件，无需重载 launchd）。
+
+> 该 plist 已不承担任何调度职责：09:15 的 launchd 兜底于 2026-07 移除（它因缺 `--mode` 参数且 launchd 环境下 `import bot_utils` 失败，从未成功运行过），失败兜底由 09:45 的 health_check + auto_repair 承担。plist 仅作为环境变量配置源保留。
 
 | 变量 | 说明 | 来源 |
 |------|------|------|

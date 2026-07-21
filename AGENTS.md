@@ -31,26 +31,31 @@ RSS × 3 源 ──────────────────────�
 ### 自动化调度
 
 ```
-09:53  Claude 定时任务（唯一写稿入口）
+08:30  Claude 定时任务（唯一写稿入口）
          claude_report.sh fetch → Claude 写两稿 → claude_report.sh send
                        │
                   run.log [OK/FAIL]
 
-11:00  launchd → health_check.sh
+09:45  launchd → health_check.sh
                        │
-           ┌── [OK] ───┴── .ok_streak +1
+           ┌── [OK] ───┼── .ok_streak +1
            │                streak ≥ 3 → 删除 changelog 中 [x] 条目
            │
+           ├── [无记录] ── claude_catchup.sh 无头补跑（自动版 Run Now）
+           │                claude CLI 重走 fetch → 写两稿 → send；同一天只补跑一次
+           │
            └── [FAIL] ─── changelog 新增 [ ] 条目
-                       └─▶ auto_repair.sh（后台触发）
+                       └─▶ auto_repair.sh（后台触发；先查当日稿件，缺稿直接转无头补跑）
                                  │
                          瞬时错误？
-                         ├─ Yes → 等 30s → 直接重跑
+                         ├─ Yes → 等 30s → 重跑 send
                          │         ├─ 成功 → changelog [x]
                          │         └─ 失败 → 升级
-                         └─ No  → claude CLI 分析修复 → 重跑
+                         └─ No  → claude CLI 分析修复 → 重跑 send
                                    ├─ 成功 → changelog [x]
-                                   └─ 失败 → macOS 通知 → 人工介入
+                                   └─ 失败 → claude_catchup.sh 无头补跑
+                                             ├─ 成功 → changelog [x]
+                                             └─ 失败 → macOS 通知 → 人工介入
 ```
 
 ---
@@ -63,19 +68,21 @@ RSS × 3 源 ──────────────────────�
 | `claude_report.sh` | 供 Claude 定时任务调用的 fetch/send 封装（从 plist 加载环境变量） | 极少 |
 | `prompt_analysis.md` / `prompt_news.md` | 消息①/② 的写稿规范（唯一权威源，Claude 依此写稿） | 偶尔 |
 | `health_check.sh` | 按日期检查今天 [OK]/[FAIL] 状态，含 60s 等待防竞态；BTC 数据质量通知；触发 auto_repair | 极少 |
-| `~/Desktop/bot_ops/shared/bot_utils.py` | 共享工具库（两个 Bot 共用）：sanitize_html / with_retry / fetch_rss / parse_entry_date / already_ran_today / fetch_article_text（抓正文） | 偶尔 |
-| `auto_repair.sh` | 薄包装：设置 BOT_NAME/SCRIPT/ERROR，委托 `bot_ops/auto_repair_base.sh` 执行 | 极少 |
-| `~/Desktop/bot_ops/auto_repair_base.sh` | 共享修复逻辑（Level 1 重跑 / Level 2 Claude CLI）；两个 Bot 共用 | 极少 |
+| `~/bots/shared/bot_utils.py` | 共享工具库（两个 Bot 共用）：sanitize_html / with_retry / fetch_rss / parse_entry_date / already_ran_today / fetch_article_text（抓正文） | 偶尔 |
+| `auto_repair.sh` | 薄包装：设置 BOT_NAME/SCRIPT/ERROR/DRAFTS，委托 `~/bots/shared/auto_repair_base.sh` 执行 | 极少 |
+| `~/bots/shared/auto_repair_base.sh` | 共享修复逻辑（Level 1 重跑 send / Level 2 Claude CLI / 最终兜底无头补跑）；两个 Bot 共用，2026-07 从 `~/Desktop/bot_ops/` 迁入并修复重跑缺陷 | 极少 |
+| `claude_catchup.sh` | 无头补跑薄包装（委托 `~/bots/shared/headless_catchup_base.sh`）：当天未出稿或自愈失败时由 claude CLI 完整重走流程；同一天只补跑一次（logs/.catchup_ran 戳记） | 极少 |
 | `logs/report_analysis.txt` / `logs/report_news.txt` | 当日 Claude 写好的两稿（send 读取后推送） | 每日写入 |
 | `logs/fetch_meta.json` | fetch 边车：日志摘要 + 指标（send 回填，供体检监控） | 每日写入 |
 | `logs/run.log` | 单行摘要日志（人类可读） | 每日写入 |
 | `logs/run.jsonl` | 结构化指标（程序可读） | 每日写入 |
-| `logs/launchd.log` | launchd 的 stdout/stderr | 每日写入 |
+| `logs/launchd.log` | （历史）旧 09:15 launchd 兜底的 stdout/stderr，兜底已移除，不再写入 | 不再写入 |
 | `logs/health_check.log` | health_check 运行日志 | 每日写入 |
+| `logs/headless_catchup.log` | 无头补跑运行日志 | 触发时写入 |
 | `changelog.md` | 问题追踪，与 health_check 联动 | 按需 |
 | `pending_messages.json` | Telegram 发送缓存（降级保护） | 临时 |
-| `com.shirley.crypto-daily-bot.plist.example` | 主 plist 模板（正式配置在 `~/Library/LaunchAgents/`，是端口/密钥的唯一权威源，`claude_report.sh` 从中读环境变量） | 极少 |
-| `com.shirley.crypto-daily-bot-health.plist` | health_check launchd 配置（11:00 触发） | 极少 |
+| `com.shirley.crypto-daily-bot.plist.example` | 环境变量 plist 模板（正式配置在 `~/Library/LaunchAgents/`，是端口/密钥的唯一权威源，`claude_report.sh` 从中读环境变量；不含调度，09:15 launchd 兜底已于 2026-07 移除，失败兜底由 health_check + auto_repair 承担） | 极少 |
+| `com.shirley.crypto-daily-bot-health.plist` | health_check launchd 配置（09:45 触发） | 极少 |
 
 ---
 
@@ -101,7 +108,7 @@ YYYY-MM-DD HH:MM  [OK/FAIL/WARN]  消息内容
 `health_check.sh` 用 `grep "$TODAY.*[OK]"` / `grep "$TODAY.*[FAIL]"` 按日期匹配，改动格式会导致健康检查失效。
 
 ### 重复推送防护
-`already_ran_today()` 在 `run.log` 中检测到今天已有 `[OK]` 记录时直接退出，防止 launchd 补跑导致重复推送。  
+`already_ran_today()` 在 `run.log` 中检测到今天已有 `[OK]` 记录时直接退出，防止同日重复运行导致重复推送。  
 需要强制重跑时设置环境变量 `FORCE_RUN=1`。
 
 ### 数据降级防护
@@ -117,7 +124,7 @@ BTC 和 ETH 价格同时为「未知」时，跳过本次发送（`write_log("WA
 
 ### 代理
 - 固定走 `127.0.0.1:YOUR_PORT` (本地代理端口)
-- 端口在 `~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist` 的 `HTTP_PROXY`/`HTTPS_PROXY` 里配置（唯一权威源）；改完 `launchctl unload && launchctl load` 重载
+- 端口在 `~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist` 的 `HTTP_PROXY`/`HTTPS_PROXY` 里配置（唯一权威源）；改完即生效，`claude_report.sh` 每次运行时直接读文件，无需重载 launchd
 - `requests` 通过 `SESSION` 显式配置，`feedparser` 通过 `HTTP_PROXY` 环境变量
 
 ### 重试策略
@@ -163,9 +170,6 @@ tail -3 logs/run.jsonl | python3 -m json.tool
 
 # 查看当前问题清单
 cat changelog.md
-
-# 查看 launchd 原始输出
-tail -20 logs/launchd.log
 
 # 手动抓取 / 发送（Claude 定时任务用同一封装）
 bash claude_report.sh fetch     # 抓行情+新闻+抓正文，输出写稿素材
