@@ -29,7 +29,9 @@ from pathlib import Path
 # 共享工具库
 sys.path.insert(0, str(Path.home() / "bots" / "shared"))
 from bot_utils import (sanitize_html, with_retry, fetch_rss, parse_entry_date,
-                       already_ran_today, fetch_article_text)
+                       already_ran_today, fetch_article_text,
+                       url_key, load_sent_urls, record_sent_urls, extract_hrefs,
+                       paginate_telegram, update_zero_streak)
 
 LOG_FILE   = Path(__file__).parent / "logs" / "run.log"
 JSONL_FILE = Path(__file__).parent / "logs" / "run.jsonl"
@@ -41,6 +43,13 @@ DRAFT_ANALYSIS = Path(__file__).parent / "logs" / "report_analysis.txt"   # 消�
 DRAFT_NEWS     = Path(__file__).parent / "logs" / "report_news.txt"       # 消息②新闻播报
 # fetch 模式写出、send 模式读回的边车：承载 OK 日志摘要与 health_check 所需 metrics
 FETCH_META     = Path(__file__).parent / "logs" / "fetch_meta.json"
+# 跨天去重档案：send 成功后记录稿件里实际用到的链接，fetch 时据此排除。
+# Crypto 的时间窗是 3 天而每天跑一次，没有这层同一条新闻会连播多天。
+SENT_URLS      = Path(__file__).parent / "logs" / "sent_urls.json"
+# RSS 源连续零产计数（fetch 阶段唯一写入，health_check 只读）
+ZERO_STREAK    = Path(__file__).parent / "logs" / ".zero_streak.json"
+# 连续零产多少天就判定该源可以移除
+ZERO_STREAK_THRESHOLD = 3
 
 # ===== P0: 显式代理配置 =====
 _PROXY = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
@@ -286,7 +295,11 @@ def build_news_context(
     now        = datetime.now(timezone.utc)
     time_limit = now - timedelta(days=3)
     seen_urls: set = set()
+    sent_before    = load_sent_urls(SENT_URLS)
     picked = []   # (title, url, url_lower, media, snippet)
+
+    kept_per_source: dict = {}
+    drops = {"dup": 0, "already_sent": 0, "stale": 0}
 
     for entry in entries:
         title = getattr(entry, "title", None)
@@ -295,10 +308,16 @@ def build_news_context(
         original_url = getattr(entry, "link", "") or getattr(entry, "id", "")
         url_lower    = original_url.lower()
         if not url_lower or url_lower in seen_urls:
+            drops["dup"] += 1
             continue
         seen_urls.add(url_lower)
+        # 跨天去重：前几天已经播出去的条目不再重复入选（3 天窗口的核心防线）
+        if url_key(original_url) in sent_before:
+            drops["already_sent"] += 1
+            continue
         pub_date = parse_entry_date(entry)
         if not pub_date or pub_date < time_limit:
+            drops["stale"] += 1
             continue
         snippet = getattr(entry, "summary", "") or ""
         if "cointelegraph.com" in url_lower:
@@ -307,6 +326,8 @@ def build_news_context(
             media = "CoinDesk"
         else:
             media = url_lower.split("/")[2] if "/" in url_lower else url_lower
+        src = getattr(entry, "__src", "?")
+        kept_per_source[src] = kept_per_source.get(src, 0) + 1
         picked.append((title, original_url, url_lower, media, snippet))
 
     # best-effort 并发抓正文全文；失败/被墙/过短回退 RSS 摘要
@@ -354,7 +375,7 @@ def build_news_context(
         f"{trend_str}\n"
         f"----------------\n\n"
     )
-    return market_header + "\n".join(news_lines)
+    return market_header + "\n".join(news_lines), kept_per_source, drops
 
 
 # ===== P0: 发送 Telegram（单块重试 + 整体分块）=====
@@ -376,34 +397,9 @@ def _send_one(chunk: str) -> None:
 
 
 def send_telegram(text: str) -> None:
-    MAX_LEN = 4096
-    # sanitize 一次，在拆分前完成，避免切分点破坏标签结构
-    text = sanitize_html(text)
-
-    if len(text) <= MAX_LEN:
-        _send_one(text)
-        return
-
-    # 按段落边界（\n\n）拆分，保证每条新闻完整不被截断
-    paragraphs = text.split('\n\n')
-    chunks: list[str] = []
-    current: list[str] = []
-    current_len = 0
-
-    for para in paragraphs:
-        needed = len(para) + (2 if current else 0)  # 2 for '\n\n' separator
-        if current_len + needed > MAX_LEN and current:
-            chunks.append('\n\n'.join(current))
-            current = [para]
-            current_len = len(para)
-        else:
-            current.append(para)
-            current_len += needed
-
-    if current:
-        chunks.append('\n\n'.join(current))
-
-    for chunk in chunks:
+    # sanitize 一次，在拆分前完成，避免切分点破坏标签结构；
+    # 切分 + 页码由 bot_utils.paginate_telegram 统一负责（两个 bot 共用同一实现）。
+    for chunk in paginate_telegram(sanitize_html(text)):
         _send_one(chunk)
 
 
@@ -450,26 +446,52 @@ def gather() -> dict:
 
     print("\n📡 抓取 RSS 源...", file=sys.stderr)
     all_entries = []
-    source_counts: dict = {}
+    fetched_counts: dict = {}
     for feed_url, limit in RSS_SOURCES:
         entries = fetch_rss(feed_url, limit)
+        domain  = feed_url.split("/")[2]
+        # 打上来源标记，供统计"过滤后每个源还剩几条"
+        for e in entries:
+            e["__src"] = domain
         all_entries.extend(entries)
-        source_counts[feed_url.split("/")[2]] = len(entries)
+        fetched_counts[domain] = fetched_counts.get(domain, 0) + len(entries)
         print(f"  ✓ {len(entries)} 条  {feed_url}", file=sys.stderr)
-    zero_sources = [d for d, c in source_counts.items() if c == 0]
 
-    today        = datetime.now().strftime("%Y-%m-%d")
-    news_context = build_news_context(
+    today = datetime.now().strftime("%Y-%m-%d")
+    news_context, kept_per_source, drops = build_news_context(
         all_entries, prices, fear_val, fear_label,
         trending, global_mkt, defi_data, sectors,
     )
-    news_count   = news_context.count("----")
+    # 按条目标记计数，不再数 "----"：行情区块的 ---------------- 分隔线会被算进去，
+    # 旧口径下这个值恒为 33/34，与实际新闻条数无关。
+    news_count = news_context.count("[原始英文标题]")
+
+    # 零产源 = 过滤后一条都没剩的源（而非"RSS 拉到 0 条"）
+    source_stats = {d: {"fetched": n, "kept": kept_per_source.get(d, 0)}
+                    for d, n in fetched_counts.items()}
+    zero_sources = [d for d, s in source_stats.items() if s["kept"] == 0]
+
+    # 连续零产追踪：本处是 .zero_streak.json 的唯一写入方，health_check 只读不写
+    stale_sources = update_zero_streak(ZERO_STREAK, zero_sources, list(source_stats),
+                                       threshold=ZERO_STREAK_THRESHOLD)
+    try:
+        streak_now = json.loads(ZERO_STREAK.read_text(encoding="utf-8"))
+    except Exception:
+        streak_now = {}
+
     print(f"\n📰 共抓取 {len(all_entries)} 条 → 保留 {news_count} 条有效新闻", file=sys.stderr)
+    print(f"   过滤明细：重复 {drops['dup']} · 已播过 {drops['already_sent']} · "
+          f"超 3 天 {drops['stale']}", file=sys.stderr)
+    for d, s in sorted(source_stats.items(), key=lambda kv: -kv[1]["kept"]):
+        n = streak_now.get(d, 0)
+        flag = f"  ⚠️ 零产（连续 {n} 天）" if s["kept"] == 0 else ""
+        print(f"   {d:26s} 抓{s['fetched']:>2} → 留{s['kept']:>2}{flag}", file=sys.stderr)
 
     return {
         "prices": prices, "fear_val": fear_val, "fear_label": fear_label,
         "global_mkt": global_mkt, "trending": trending, "defi_data": defi_data,
         "sectors": sectors, "all_entries": all_entries, "zero_sources": zero_sources,
+        "source_stats": source_stats, "stale_sources": stale_sources,
         "news_context": news_context, "news_count": news_count, "today": today,
     }
 
@@ -489,6 +511,8 @@ def _summary_and_metrics(data: dict) -> tuple:
         "bull_bear": g["bull_bear_label"], "trending_count": len(data["trending"]),
         "rss_fetched": len(data["all_entries"]), "rss_kept": data["news_count"],
         "rss_zero_sources": data["zero_sources"],
+        "rss_source_stats": data["source_stats"],
+        "rss_stale_sources": data["stale_sources"],
     }
     return summary, metrics
 
@@ -521,7 +545,13 @@ def run_fetch() -> int:
     print(f"今天日期：{data['today']}")
     print(f"保留 {data['news_count']} 条有效新闻（共抓取 {len(data['all_entries'])} 条）")
     if data["zero_sources"]:
-        print(f"零结果源：{', '.join(data['zero_sources'])}")
+        print(f"零产源：{', '.join(data['zero_sources'])}")
+    # 连续零产达阈值 → 结构化告警块，供 routine 在日报汇报里转述给用户
+    if data["stale_sources"]:
+        print("=== SOURCE_ALERT ===")
+        for d, n in data["stale_sources"].items():
+            print(f"{d} 已连续 {n} 天零产，建议从 RSS_SOURCES 移除或更换")
+        print("=== SOURCE_ALERT_END ===")
     print("=== CONTEXT_BEGIN ===")
     print(data["news_context"])
     print("=== CONTEXT_END ===")
@@ -559,6 +589,14 @@ def run_send() -> int:
     send_telegram(news_report)
     CACHE_FILE.unlink(missing_ok=True)
     print("  ✓ 发送成功", file=sys.stderr)
+
+    # 归档本次真正播出去的链接，供后续 fetch 跨天去重（两稿都扫，链接主要在消息②）。
+    # 记在发送成功之后：发失败的那批不该被标成"已播"。
+    hrefs = extract_hrefs(analysis) + extract_hrefs(news_report)
+    if hrefs:
+        total = record_sent_urls(SENT_URLS, hrefs)
+        print(f"  ✓ 已归档 {len(hrefs)} 条链接用于跨天去重（档案共 {total} 条）",
+              file=sys.stderr)
 
     # OK 日志：从 fetch 边车取摘要与 metrics，保持 health_check 监控存活
     try:

@@ -76,6 +76,8 @@ RSS × 3 源 ──────────────────────�
 | `logs/fetch_meta.json` | fetch 边车：日志摘要 + 指标（send 回填，供体检监控） | 每日写入 |
 | `logs/run.log` | 单行摘要日志（人类可读） | 每日写入 |
 | `logs/run.jsonl` | 结构化指标（程序可读） | 每日写入 |
+| `logs/sent_urls.json` | 跨天去重档案：已推送链接 → 日期（保留 7 天，send 成功后写入） | 每日写入 |
+| `logs/.zero_streak.json` | 各源连续零产天数（health_check 维护，达 3 天才告警） | 每日写入 |
 | `logs/launchd.log` | （历史）旧 09:15 launchd 兜底的 stdout/stderr，兜底已移除，不再写入 | 不再写入 |
 | `logs/health_check.log` | health_check 运行日志 | 每日写入 |
 | `logs/headless_catchup.log` | 无头补跑运行日志 | 触发时写入 |
@@ -117,7 +119,12 @@ BTC 和 ETH 价格同时为「未知」时，跳过本次发送（`write_log("WA
 ### Telegram 输出格式
 - 所有 AI 输出必须是 **HTML 格式**，禁止 Markdown
 - 只能使用 `<b>` 和 `<a href="...">` 两种标签
-- 单条消息上限 4096 字符
+- 单条消息上限 4096 字符；超长由 `bot_utils.paginate_telegram` 按段落边界切分，
+  **每条顶部加 `<b>（n/N）</b>` 页码**（单条不加）。页码在 sanitize 之后拼接，切分点不会腰斩条目
+
+### 消息②结构
+- 开头是「📋 加密市场播报 · 日期」，紧跟「⚡ 30秒速览」（3–5 条、每条 ≤30 字、顺序与正文一致），再进正文条目
+- 速览规则写在 `prompt_news.md` 的输出格式里，改版式改那里
 
 ### 新闻时效
 - Crypto Daily Bot 收录 **3 天内**新闻（`timedelta(days=3)`）
@@ -138,9 +145,12 @@ BTC 和 ETH 价格同时为「未知」时，跳过本次发送（`write_log("WA
 - 两稿全部发送成功后删除缓存文件
 - 缓存用于避免内容丢失（可人工恢复），当前 Claude 流程不做自动重发
 
-### 分源零条监控
-- 每次运行将各 RSS 源抓取数写入 JSONL 的 `rss_zero_sources` 字段
-- `health_check.sh` 步骤 5 检测到零源时发送 macOS 通知，但不触发 auto_repair（不影响整体 OK）
+### 分源零产监控与源淘汰
+- 每次 fetch 把各源 `{fetched, kept}` 写入 JSONL 的 `rss_source_stats`；`rss_zero_sources` 列出**过滤后一条都没剩**的源
+- 判定口径是"过滤后零产"而非"RSS 拉到 0 条"——源可能天天拉得到却条条过期/重复/已播，旧口径发现不了
+- `logs/.zero_streak.json` 累计各源连续零产天数，**由 fetch 单点写入**（`update_zero_streak`），health_check 只读不写，避免两处各加一次把天数翻倍
+- 连续 **3 天**零产 → fetch 的 stdout 输出 `=== SOURCE_ALERT ===` 块（routine 会在日报汇报里单列「RSS 源健康」），同时写入 metrics 的 `rss_stale_sources`，health_check 据此发 macOS 通知
+- 收到告警即可把该源从脚本的 `RSS_SOURCES` 移除或更换；源一旦恢复产出，计数自动清零并移出档案
 
 ---
 

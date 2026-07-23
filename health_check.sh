@@ -58,8 +58,10 @@ if [ "$STATUS" = "FAIL" ]; then
 
     echo "0" > "$OK_COUNT_FILE"
     echo "[health_check] FAIL 检测到，触发 auto_repair..."
-    bash "$DIR/auto_repair.sh" "$ERR" &
     echo "[health_check] FAIL — $ERR_LINE"
+    # 前台执行：launchd 在 job 主进程退出时会回收整个进程组，
+    # 用 `&` 起的后台子进程会被立即杀掉（2026-07-23 修复）
+    bash "$DIR/auto_repair.sh" "$ERR"
     exit 2
 
 elif [ "$STATUS" = "MISSING" ]; then
@@ -67,7 +69,8 @@ elif [ "$STATUS" = "MISSING" ]; then
     # → 触发无头补跑（自动版 Run Now），由 claude CLI 完整重走 fetch → 写稿 → send
     osascript -e 'display notification "今天主脚本未运行，已触发无头补跑" with title "⚠️ Crypto Daily Bot"'
     echo "[health_check] WARN: 今天（$TODAY）无任何运行记录，触发无头补跑..."
-    bash "$DIR/claude_catchup.sh" &
+    # 前台执行，理由同 auto_repair 分支（launchd 进程组回收）
+    bash "$DIR/claude_catchup.sh"
     exit 1
 fi
 
@@ -81,19 +84,32 @@ if [ -f "$JSONL" ]; then
     fi
 fi
 
-# ── 5. 分源监控：检查是否有 RSS 源返回 0 条 ─────────────────────────
+# ── 5. 分源监控：读取 fetch 阶段算好的"连续零产"结论 ──────────────
+# 连续天数由 *_report.py 的 fetch 单点维护（logs/.zero_streak.json），
+# 这里只读不写——两处各加一次会让天数翻倍。
 if [ -f "$JSONL" ]; then
-    ZERO_SOURCES=$(grep "$TODAY" "$JSONL" | tail -1 | python3 -c "
+    STALE=$(grep "$TODAY" "$JSONL" | tail -1 | python3 -c "
 import sys, json
 try:
     d = json.loads(sys.stdin.read())
-    zs = d.get('rss_zero_sources', [])
-    print(','.join(zs) if zs else '')
-except: print('')
+    st = d.get('rss_stale_sources', {}) or {}
+    print(', '.join(f'{k}({v}天)' for k, v in sorted(st.items())))
+except Exception: print('')
 " 2>/dev/null)
-    if [ -n "$ZERO_SOURCES" ]; then
-        osascript -e "display notification \"RSS 源返回 0 条：$ZERO_SOURCES\" with title \"⚠️ Crypto Daily Bot\""
-        echo "[health_check] WARN: RSS 零源: $ZERO_SOURCES"
+    if [ -n "$STALE" ]; then
+        osascript -e "display notification \"RSS 源连续零产，建议移除：$STALE\" with title \"⚠️ Crypto Daily Bot\""
+        echo "[health_check] WARN: RSS 源连续零产，建议移除或更换: $STALE"
+    fi
+
+    ZERO_TODAY=$(grep "$TODAY" "$JSONL" | tail -1 | python3 -c "
+import sys, json
+try:
+    d = json.loads(sys.stdin.read())
+    print(','.join(d.get('rss_zero_sources', []) or []))
+except Exception: print('')
+" 2>/dev/null)
+    if [ -n "$ZERO_TODAY" ]; then
+        echo "[health_check] INFO: 今日零产源（未达连续 3 天，暂不告警）: $ZERO_TODAY"
     fi
 fi
 
