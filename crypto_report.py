@@ -27,7 +27,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # 共享工具库
-sys.path.insert(0, str(Path.home() / "bots" / "shared"))
+# 从脚本自身位置推导共享层（bot 目录的同级 shared/），
+# 这样整个 bots 文件夹搬到任何位置都不用改路径
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "shared"))
 from bot_utils import (sanitize_html, with_retry, fetch_rss, parse_entry_date,
                        already_ran_today, fetch_article_text,
                        url_key, load_sent_urls, record_sent_urls, extract_hrefs,
