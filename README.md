@@ -31,9 +31,9 @@
 
 **稳定性 — 出了问题自己修**
 
-- 每日体检：09:45 检查当天是否成功出稿，异常自动记 changelog 并触发自愈
+- 每日体检：11:00 检查当天是否成功出稿，异常自动记 changelog 并触发自愈
 - 两级自愈：瞬时故障等 30 秒重跑；持续故障调用 Claude CLI 诊断修复
-- 无头补跑：当天根本没出稿（机器睡眠错过 08:30）或自愈无效时，claude CLI 自动完整重走一遍流程（自动版 Run Now）
+- 无头补跑：当天根本没出稿（机器睡眠错过 10:00）或自愈无效时，claude CLI 自动完整重走一遍流程（自动版 Run Now）
 - 消息缓存：发送失败 / 代理不可用时，把两稿缓存到 pending_messages.json，避免内容丢失
 - 源淘汰监测：统计每个 RSS 源"过滤后还剩几条"，连续 3 天零产即告警建议移除（详见下文）
 
@@ -76,10 +76,10 @@ RSS × 3（Cointelegraph / CoinDesk / Decrypt）             ┘     │  build_
                                                      Telegram（2 条 HTML 消息）
 
 【自动化调度】
-08:30  Claude 定时任务（唯一写稿入口）
+10:00  Claude 定时任务（唯一写稿入口）
          └─ claude_report.sh fetch → Claude 写两稿 → claude_report.sh send → run.log [OK/FAIL]
 
-09:45  launchd ──▶ health_check.sh
+11:00  launchd ──▶ health_check.sh
                         │
                   [OK] ──┼── .ok_streak +1（连续 3 次后清理已解决的 changelog 条目）
                         │
@@ -112,8 +112,8 @@ RSS × 3（Cointelegraph / CoinDesk / Decrypt）             ┘     │  build_
 | `fetch` | 记录每个源的 `{fetched, kept}` 到 `run.jsonl` 的 `rss_source_stats` |
 | `fetch` | 过滤后 `kept == 0` 的源计入 `logs/.zero_streak.json`，连续天数 +1；有产出则清零并移出档案 |
 | `fetch` | 连续 **3 天**零产 → stdout 输出 `=== SOURCE_ALERT ===` 块，并写入 metrics 的 `rss_stale_sources` |
-| 08:30 routine | 读到 SOURCE_ALERT 后，在日报汇报末尾单列「RSS 源健康」，说明哪个源连续几天没贡献、可以移除或更换 |
-| 09:45 health_check | 读 metrics 发 macOS 通知；单日零产只记 INFO 不打扰 |
+| 10:00 routine | 读到 SOURCE_ALERT 后，在日报汇报末尾单列「RSS 源健康」，说明哪个源连续几天没贡献、可以移除或更换 |
+| 11:00 health_check | 读 metrics 发 macOS 通知；单日零产只记 INFO 不打扰 |
 
 连续天数由 `fetch` **单点写入**，health_check 只读不写——两处各加一次会让天数翻倍。
 
@@ -152,7 +152,7 @@ Crypto Daily Bot/
 ├── AGENTS.md                          # 通用 AI 操作手册（适用于任意 AI 工具）
 ├── CLAUDE.md                          # Claude Code 专属上下文（引用 AGENTS.md）
 ├── com.shirley.crypto-daily-bot.plist.example        # 环境变量 plist 模板（正式配置在 ~/Library/LaunchAgents/，是端口/密钥的唯一权威源；不含调度，09:15 launchd 兜底已于 2026-07 移除）
-├── com.shirley.crypto-daily-bot-health.plist         # health_check launchd 配置（09:45 触发）
+├── com.shirley.crypto-daily-bot-health.plist         # health_check launchd 配置（11:00 触发）
 ├── requirements.txt                   # Python 依赖清单
 └── README.md                          # 本文件（人类阅读）
 ```
@@ -165,7 +165,7 @@ Crypto Daily Bot/
 
 所有变量写在**唯一权威配置源** `~/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist` 中，`claude_report.sh` 从这里读取并自动注入。仓库内只保留 `.plist.example` 模板（不含密钥）。改端口/密钥请直接编辑 LaunchAgents 里那份，改完即生效（`claude_report.sh` 每次运行时直接读文件，无需重载 launchd）。
 
-> 该 plist 已不承担任何调度职责：09:15 的 launchd 兜底于 2026-07 移除（它因缺 `--mode` 参数且 launchd 环境下 `import bot_utils` 失败，从未成功运行过），失败兜底由 09:45 的 health_check + auto_repair 承担。plist 仅作为环境变量配置源保留。
+> 该 plist 已不承担任何调度职责：09:15 的 launchd 兜底于 2026-07 移除（它因缺 `--mode` 参数且 launchd 环境下 `import bot_utils` 失败，从未成功运行过），失败兜底由 11:00 的 health_check + auto_repair 承担。plist 仅作为环境变量配置源保留。
 
 | 变量 | 说明 | 来源 |
 |------|------|------|

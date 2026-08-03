@@ -31,12 +31,12 @@ RSS × 3 源 ──────────────────────�
 ### 自动化调度
 
 ```
-08:30  Claude 定时任务（唯一写稿入口）
+10:00  Claude 定时任务（唯一写稿入口）
          claude_report.sh fetch → Claude 写两稿 → claude_report.sh send
                        │
                   run.log [OK/FAIL]
 
-09:45  launchd → health_check.sh
+11:00  launchd → health_check.sh
                        │
            ┌── [OK] ───┼── .ok_streak +1
            │                streak ≥ 3 → 删除 changelog 中 [x] 条目
@@ -84,7 +84,7 @@ RSS × 3 源 ──────────────────────�
 | `changelog.md` | 问题追踪，与 health_check 联动 | 按需 |
 | `pending_messages.json` | Telegram 发送缓存（降级保护） | 临时 |
 | `com.shirley.crypto-daily-bot.plist.example` | 环境变量 plist 模板（正式配置在 `~/Library/LaunchAgents/`，是端口/密钥的唯一权威源，`claude_report.sh` 从中读环境变量；不含调度，09:15 launchd 兜底已于 2026-07 移除，失败兜底由 health_check + auto_repair 承担） | 极少 |
-| `com.shirley.crypto-daily-bot-health.plist` | health_check launchd 配置（09:45 触发） | 极少 |
+| `com.shirley.crypto-daily-bot-health.plist` | health_check launchd 配置（11:00 触发） | 极少 |
 
 ---
 
@@ -159,7 +159,7 @@ BTC 和 ETH 价格同时为「未知」时，跳过本次发送（`write_log("WA
 | 禁止操作 | 原因 |
 |---------|------|
 | 修改 `run.log` 的 `[OK]/[FAIL]/[WARN]` 格式 | health_check.sh 依赖字符串匹配 |
-| 删除 `flush_pending()` 调用 | 会导致失败消息永久丢失 |
+| 删除 `save_pending()` 调用 | 发送失败时稿件会永久丢失，无法人工恢复 |
 | 修改 PROMPT 中的 HTML 输出格式 | Telegram 不支持 Markdown |
 | 将 `timedelta(days=3)` 改小 | 会漏掉重要新闻 |
 | 修改 `with_retry` 的 exceptions 参数 | 会影响重试覆盖范围 |

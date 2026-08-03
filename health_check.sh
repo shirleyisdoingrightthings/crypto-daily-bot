@@ -25,6 +25,12 @@ get_today_status() {
         echo "OK"
     elif grep -q "$TODAY.*\[FAIL\]" "$LOG"; then
         echo "FAIL"
+    elif grep -q "$TODAY.*\[WARN\].*无有效新闻" "$LOG"; then
+        # 终态 WARN：当天确实没有值得播的新闻，不是故障。
+        # 补跑也只会再抓一次同样的空结果，白烧 token 还弹"需人工介入"。
+        # 注意：代理不可用 / 行情数据缺失这两类 WARN 不在此列——它们是暂时性的，
+        # 到体检时刻可能已恢复，仍按 MISSING 处理以触发补跑。
+        echo "NO_NEWS"
     else
         echo "MISSING"
     fi
@@ -72,6 +78,13 @@ elif [ "$STATUS" = "MISSING" ]; then
     # 前台执行，理由同 auto_repair 分支（launchd 进程组回收）
     bash "$DIR/claude_catchup.sh"
     exit 1
+fi
+
+if [ "$STATUS" = "NO_NEWS" ]; then
+    # 当天无有效新闻：正常终态，不补跑、不自愈、不计入 OK streak
+    osascript -e 'display notification "今天无有效新闻，未出稿（非故障）" with title "ℹ️ Crypto Daily Bot"' 2>/dev/null
+    echo "[health_check] NO_NEWS: 今天（$TODAY）无有效新闻，属正常终态，不触发补跑"
+    exit 0
 fi
 
 # ── 4. 今天 OK：内容质量校验（BTC 价格是否缺失）────────────────────
