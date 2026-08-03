@@ -68,9 +68,9 @@ RSS × 3 源 ──────────────────────�
 | `claude_report.sh` | 供 Claude 定时任务调用的 fetch/send 封装（从 plist 加载环境变量） | 极少 |
 | `prompt_analysis.md` / `prompt_news.md` | 消息①/② 的写稿规范（唯一权威源，Claude 依此写稿） | 偶尔 |
 | `health_check.sh` | 按日期检查今天 [OK]/[FAIL] 状态，含 60s 等待防竞态；BTC 数据质量通知；触发 auto_repair | 极少 |
-| `~/Desktop/bots/shared/bot_utils.py` | 共享工具库（两个 Bot 共用）：sanitize_html / with_retry / fetch_rss / parse_entry_date / already_ran_today / fetch_article_text（抓正文） | 偶尔 |
+| `~/Desktop/bots/shared/bot_utils.py` | 共享工具库（三个 bot 共用）：基础工具 + 抓正文 + 跨天去重 + 相关性闸门 + 分页页码 + 代理自愈 + 零产监测，完整清单见文件头 | 偶尔 |
 | `auto_repair.sh` | 薄包装：设置 BOT_NAME/SCRIPT/ERROR/DRAFTS，委托 `~/Desktop/bots/shared/auto_repair_base.sh` 执行 | 极少 |
-| `~/Desktop/bots/shared/auto_repair_base.sh` | 共享修复逻辑（Level 1 重跑 send / Level 2 Claude CLI / 最终兜底无头补跑）；两个 Bot 共用，2026-07 从 `~/Desktop/bot_ops/` 迁入并修复重跑缺陷 | 极少 |
+| `~/Desktop/bots/shared/auto_repair_base.sh` | 共享修复逻辑（Level 1 重跑 send / Level 2 Claude CLI / 最终兜底无头补跑）；三个 bot 共用 | 极少 |
 | `claude_catchup.sh` | 无头补跑薄包装（委托 `~/Desktop/bots/shared/headless_catchup_base.sh`）：当天未出稿或自愈失败时由 claude CLI 完整重走流程；同一天只补跑一次（logs/.catchup_ran 戳记） | 极少 |
 | `logs/report_analysis.txt` / `logs/report_news.txt` | 当日 Claude 写好的两稿（send 读取后推送） | 每日写入 |
 | `logs/fetch_meta.json` | fetch 边车：日志摘要 + 指标（send 回填，供体检监控） | 每日写入 |
@@ -165,7 +165,7 @@ BTC 和 ETH 价格同时为「未知」时，跳过本次发送（`write_log("WA
 | 修改 `with_retry` 的 exceptions 参数 | 会影响重试覆盖范围 |
 | 替换 CoinGecko 免费接口为付费 Pro 接口 | 会导致 API 认证失败 |
 | 修改价格列表中的币种 ID | CoinGecko ID 必须与官方匹配 |
-| 在 `bot_utils.py` 中删除或重命名工具函数 | 两个 Bot 共用，改动会同时影响 AI News Bot 和 Crypto Daily Bot |
+| 在 `bot_utils.py` 中删除或重命名工具函数 | 三个 bot 共用，改动会同时影响 AI Daily News / Crypto Daily / US Stock 三个 bot |
 
 ---
 

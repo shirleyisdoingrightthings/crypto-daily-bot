@@ -386,7 +386,7 @@ def _send_one(chunk: str) -> None:
 
 def send_telegram(text: str) -> None:
     # sanitize 一次，在拆分前完成，避免切分点破坏标签结构；
-    # 切分 + 页码由 bot_utils.paginate_telegram 统一负责（两个 bot 共用同一实现）。
+    # 切分 + 页码由 bot_utils.paginate_telegram 统一负责（三个 bot 共用同一实现）。
     for chunk in paginate_telegram(sanitize_html(text)):
         _send_one(chunk)
 
