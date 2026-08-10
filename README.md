@@ -145,7 +145,6 @@ Crypto Daily Bot/
 │   ├── run.jsonl                      # 结构化指标日志（程序可读，含分源 fetched/kept 统计）
 │   ├── sent_urls.json                 # 跨天去重档案：已推送链接 → 日期（保留 7 天）
 │   ├── .zero_streak.json              # 各源连续零产天数（fetch 单点写入，达 3 天告警）
-│   ├── launchd.log                    # （历史）旧 09:15 launchd 兜底的输出，兜底已移除，不再写入
 │   ├── health_check.log              # health_check 运行日志
 │   └── .ok_streak                     # 连续成功计数
 ├── changelog.md                       # 问题追踪，与 health_check 联动

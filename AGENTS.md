@@ -78,7 +78,6 @@ RSS × 3 源 ──────────────────────�
 | `logs/run.jsonl` | 结构化指标（程序可读） | 每日写入 |
 | `logs/sent_urls.json` | 跨天去重档案：已推送链接 → 日期（保留 7 天，send 成功后写入） | 每日写入 |
 | `logs/.zero_streak.json` | 各源连续零产天数（health_check 维护，达 3 天才告警） | 每日写入 |
-| `logs/launchd.log` | （历史）旧 09:15 launchd 兜底的 stdout/stderr，兜底已移除，不再写入 | 不再写入 |
 | `logs/health_check.log` | health_check 运行日志 | 每日写入 |
 | `logs/headless_catchup.log` | 无头补跑运行日志 | 触发时写入 |
 | `changelog.md` | 问题追踪，与 health_check 联动 | 按需 |
