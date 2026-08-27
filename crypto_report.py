@@ -6,13 +6,13 @@ Crypto 市场晨报
   · alternative.me: 恐惧贪婪指数
   · RSS × 3: Cointelegraph / CoinDesk / Decrypt（新闻 best-effort 抓正文全文，失败回退摘要）
 由 Claude 写稿：① 市场晨报（仪表盘+趋势+叙事，**每天**）② 新闻播报列表（**每 3 天**），
-推送 1～2 条 Telegram HTML 消息。行情数据易腐故每天播；新闻时间窗本就是 3 天，
+推送 1～2 条飞书富文本消息。行情数据易腐故每天播；新闻时间窗本就是 3 天，
 每天播会让同一条新闻有 3 次入选机会，改成 3 天一播后窗口与频率刚好对齐。
-本脚本只负责抓取与发送，不含写稿用的第三方大模型 API。
+本脚本只负责抓取与推送，不含写稿用的第三方大模型 API。
 
 两种运行模式（--mode，均零 API 成本）：
 - fetch：抓取全部行情+新闻（含抓正文）→ 把 context 打到 stdout + 写 logs/fetch_meta.json（供 Claude 写稿）
-- send ：读取 Claude 写好的两份稿子 → 依次发送 Telegram + 写日志
+- send ：读取 Claude 写好的两份稿子 → 依次推送飞书 + 写日志
 
 写稿规范存放于 prompt_analysis.md（消息①）与 prompt_news.md（消息②），由 Claude routine 读取。
 """
@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "shared"))
 from bot_utils import (sanitize_html, with_retry, fetch_rss, parse_entry_date,
                        already_ran_today, fetch_article_text,
                        url_key, load_sent_urls, record_sent_urls, extract_hrefs,
-                       paginate_telegram, update_zero_streak, resolve_proxy)
+                       send_feishu, update_zero_streak, resolve_proxy)
 
 LOG_FILE   = Path(__file__).parent / "logs" / "run.log"
 JSONL_FILE = Path(__file__).parent / "logs" / "run.jsonl"
@@ -85,9 +85,11 @@ def write_log(status: str, message: str, metrics: dict = None) -> None:
 
 
 # ===== 配置 =====
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "your_telegram_bot_token")
-TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID",   "your_telegram_chat_id")
-COINGECKO_API_KEY  = os.getenv("COINGECKO_API_KEY",  "your_coingecko_demo_api_key")
+# 飞书自定义机器人：webhook 地址在群「设置 → 群机器人 → 添加机器人 → 自定义机器人」
+# 里取得。若在那里勾了「签名校验」，把密钥一并放进 FEISHU_SECRET；没勾就留空。
+FEISHU_WEBHOOK    = os.getenv("FEISHU_WEBHOOK", "")
+FEISHU_SECRET     = os.getenv("FEISHU_SECRET",  "")
+COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY", "your_coingecko_demo_api_key")
 
 # limit 之和原为 14，恰等于每日入选数——评分规则形同虚设（抓 14 留 14，无取舍
 # 空间）。2026-08 提高到 22，让 prompt 里的 3/4/5 分筛选真正有东西可筛。
@@ -99,7 +101,7 @@ RSS_SOURCES = [
 ]
 
 # ===== P2: 消息缓存（降级策略）=====
-# 代理不可用或 Telegram 发送失败时把稿件存到 pending_messages.json，避免内容丢失。
+# 飞书推送失败时把稿件存到 pending_messages.json，避免内容丢失。
 # 注意：**不做自动重发**——重发要判断"这稿子还是今天的吗"，跨天重发旧稿比丢一次
 # 更糟。当天补救由 health_check → claude_catchup 重走完整流程负责，缓存只作为
 # 人工恢复的兜底副本。（2026-08 删除了定义后从未被调用的 flush_pending。）
@@ -397,29 +399,14 @@ def build_news_context(
     return market_header + "\n".join(news_lines), kept_per_source, drops
 
 
-# ===== P0: 发送 Telegram（单块重试 + 整体分块）=====
-@with_retry(max_retries=3, base_delay=5, exceptions=(requests.RequestException,))
-def _send_one(chunk: str) -> None:
-    api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    resp = SESSION.post(
-        api_url,
-        json={
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": chunk,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        },
-        timeout=30,
-    )
-    if not resp.ok:
-        raise requests.RequestException(f"Telegram 返回错误: {resp.text}")
+# ===== P0: 推送飞书 =====
+def send_report(text: str) -> int:
+    """推送一份稿件，返回实际发出的消息条数。
 
-
-def send_telegram(text: str) -> None:
-    # sanitize 一次，在拆分前完成，避免切分点破坏标签结构；
-    # 切分 + 页码由 bot_utils.paginate_telegram 统一负责（三个 bot 共用同一实现）。
-    for chunk in paginate_telegram(sanitize_html(text)):
-        _send_one(chunk)
+    sanitize 一次、在转换前完成：HTML 只是内部中间格式，清洗保证正文里的裸
+    < > & 不会被标签解析吃掉。转 post、按 20KB 分页、失败重试都由
+    bot_utils.send_feishu 统一负责（三个 bot 共用同一实现）。"""
+    return send_feishu(sanitize_html(text), FEISHU_WEBHOOK, FEISHU_SECRET)
 
 
 
@@ -655,21 +642,17 @@ def run_send() -> int:
 
     outgoing = [analysis] + ([news_report] if news_included else [])
 
-    # 代理不可用时不丢内容：本次要发的稿件一起缓存，等代理恢复后人工补发
-    if not _proxy_ok():
-        save_pending(outgoing)
-        write_log("WARN", f"代理不可用（{_PROXY}），稿件已缓存未发送")
-        return 0
-
-    # 部分发送保护（send_telegram 内部已做 sanitize_html）
+    # 部分发送保护（send_report 内部已做 sanitize_html）
+    # 这里不再做代理预检：飞书直连可达，推送阶段本来就不需要翻墙代理。
+    # （Telegram 时代代理一挂当天就整个不播，现在只有抓取阶段依赖它。）
     save_pending(outgoing)
-    print("📨 发送到 Telegram...", file=sys.stderr)
-    send_telegram(analysis)
+    print("📨 推送到飞书...", file=sys.stderr)
+    send_report(analysis)
     if news_included:
         save_pending([news_report])   # 消息①已发：更新缓存，防止重跑时重复推送
-        send_telegram(news_report)
+        send_report(news_report)
     CACHE_FILE.unlink(missing_ok=True)
-    print(f"  ✓ 发送成功（{'行情+新闻' if news_included else '仅行情'}）", file=sys.stderr)
+    print(f"  ✓ 推送成功（{'行情+新闻' if news_included else '仅行情'}）", file=sys.stderr)
 
     # 只有真的播了新闻才记录日期，供下次判断是否到期
     if news_included:
@@ -694,7 +677,7 @@ def run_send() -> int:
     duration = round(time.time() - t0, 1)
     write_log(
         "OK",
-        f"Claude写稿 → {meta.get('log_summary', '')} → Telegram发送成功",
+        f"Claude写稿 → {meta.get('log_summary', '')} → 飞书推送成功",
         metrics={**meta.get("metrics", {}), "ai_calls": 0, "source": "claude", "duration_s": duration},
     )
     return 0

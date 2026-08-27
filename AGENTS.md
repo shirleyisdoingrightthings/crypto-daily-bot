@@ -25,7 +25,7 @@ RSS × 3 源 ──────────────────────�
                               └─ prompt_news.md     → logs/report_news.txt（消息②）
                                       │
                                       ▼
-                              crypto_report.py --mode send ──▶ Telegram（2 条 HTML 消息）
+                              crypto_report.py --mode send ──▶ 飞书（2 条卡片消息）
 ```
 
 ### 自动化调度
@@ -81,7 +81,7 @@ RSS × 3 源 ──────────────────────�
 | `logs/health_check.log` | health_check 运行日志 | 每日写入 |
 | `logs/headless_catchup.log` | 无头补跑运行日志 | 触发时写入 |
 | `changelog.md` | 问题追踪，与 health_check 联动 | 按需 |
-| `pending_messages.json` | Telegram 发送缓存（降级保护） | 临时 |
+| `pending_messages.json` | 飞书推送缓存（降级保护） | 临时 |
 | `com.shirley.crypto-daily-bot.plist.example` | 环境变量 plist 模板（正式配置在 `~/Library/LaunchAgents/`，是端口/密钥的唯一权威源，`claude_report.sh` 从中读环境变量；不含调度，09:15 launchd 兜底已于 2026-07 移除，失败兜底由 health_check + auto_repair 承担） | 极少 |
 | `com.shirley.crypto-daily-bot-health.plist` | health_check launchd 配置（11:00 触发） | 极少 |
 
@@ -115,10 +115,10 @@ YYYY-MM-DD HH:MM  [OK/FAIL/WARN]  消息内容
 ### 数据降级防护
 BTC 和 ETH 价格同时为「未知」时，跳过本次发送（`write_log("WARN", ...)`），等待下次运行，不推送空数据报告。
 
-### Telegram 输出格式
+### 稿件格式（HTML 中间格式 → 飞书卡片 markdown）
 - 所有 AI 输出必须是 **HTML 格式**，禁止 Markdown
 - 只能使用 `<b>` 和 `<a href="...">` 两种标签
-- 单条消息上限 4096 字符；超长由 `bot_utils.paginate_telegram` 按段落边界切分，
+- 单条消息上限是 webhook 请求体 20KB（markdown 较紧凑，约 1 万汉字）；超长由 `bot_utils.paginate_feishu` 按行边界切分，
   **每条顶部加 `<b>（n/N）</b>` 页码**（单条不加）。页码在 sanitize 之后拼接，切分点不会腰斩条目
 
 ### 消息②结构
@@ -147,7 +147,7 @@ BTC 和 ETH 价格同时为「未知」时，跳过本次发送（`write_log("WA
 - `requests` 通过 `SESSION` 显式配置，`feedparser` 通过 `HTTP_PROXY` 环境变量
 
 ### 重试策略
-- Telegram：最多 3 次，指数退避（5 → 10 → 20s）
+- 飞书推送：最多 3 次，退避 5 → 10 → 15s（飞书失败也返回 HTTP 200，成败看响应体 `code`）
 - RSS 抓取（fetch_rss）：最多 2 次，退避 3 → 6s
 - 正文抓取（fetch_article_text）：best-effort、单次、失败即回退 RSS 摘要，不重试
 
@@ -172,7 +172,7 @@ BTC 和 ETH 价格同时为「未知」时，跳过本次发送（`write_log("WA
 |---------|------|
 | 修改 `run.log` 的 `[OK]/[FAIL]/[WARN]` 格式 | health_check.sh 依赖字符串匹配 |
 | 删除 `save_pending()` 调用 | 发送失败时稿件会永久丢失，无法人工恢复 |
-| 修改 PROMPT 中的 HTML 输出格式 | Telegram 不支持 Markdown |
+| 修改 PROMPT 中的 HTML 输出格式 | HTML 是内部中间格式，`html_to_lark_md` 与 `extract_hrefs` 都按它解析 |
 | 将 `timedelta(days=3)` 改小 | 会漏掉重要新闻 |
 | 修改 `with_retry` 的 exceptions 参数 | 会影响重试覆盖范围 |
 | 替换 CoinGecko 免费接口为付费 Pro 接口 | 会导致 API 认证失败 |

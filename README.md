@@ -1,6 +1,6 @@
 # Crypto Daily Bot
 
-每天早上由 Claude 自动写稿：拉取 6 大主流币实时价格、恐惧贪婪指数、赛道资金流向，加上 3 家加密媒体的当日头条，生成一份《市场晨报》+《新闻播报》，两条消息推送到 Telegram。
+每天早上由 Claude 自动写稿：拉取 6 大主流币实时价格、恐惧贪婪指数、赛道资金流向，加上 3 家加密媒体的当日头条，生成一份《市场晨报》+《新闻播报》，两条消息推送到飞书。
 
 ---
 
@@ -28,7 +28,7 @@
 - **双消息结构**：晨报和新闻分开推送，各自独立阅读
 - **不同频率**：行情晨报**每天**播（价格数据易腐），新闻播报**每 3 天**播一次（新闻时间窗本就是 3 天，每天播会让同一条新闻有 3 次入选机会）
 - **跨天去重**：`send` 成功后归档稿件里实际用到的链接（保留 7 天），下次抓取自动排除
-- **超长自动分页**：超过 Telegram 单条 4096 上限时按段落边界切分，每条顶部标 `（n/N）` 页码
+- **超长自动分页**：超过飞书 webhook 单条 20KB 请求体上限时按段落边界切分，每条顶部标 `（n/N）` 页码
 
 **稳定性 — 出了问题自己修**
 
@@ -43,7 +43,7 @@
 ## Demo 预览
 
 <details>
-<summary>点击展开查看 Bot 推送到 Telegram 的长图预览</summary>
+<summary>点击展开查看 Bot 的推送长图预览（截图摄于 Telegram 时期，版式与飞书一致）</summary>
 <br>
 
 ![Crypto Daily Bot 运行效果图](full_demo.png)
@@ -74,7 +74,7 @@ RSS × 3（Cointelegraph / CoinDesk / Decrypt）             ┘     │  build_
                                                                 │  超 4096 → 按段落分页 + (n/N) 页码
                                                                 │  发送成功 → 归档链接供跨天去重
                                                                 ▼
-                                                     Telegram（2 条 HTML 消息）
+                                                     飞书（2 条卡片消息）
 
 【自动化调度】
 10:00  Claude 定时任务（唯一写稿入口）
@@ -148,7 +148,7 @@ Crypto Daily Bot/
 │   ├── health_check.log              # health_check 运行日志
 │   └── .ok_streak                     # 连续成功计数
 ├── changelog.md                       # 问题追踪，与 health_check 联动
-├── pending_messages.json              # Telegram 缓存（仅发送失败时存在）
+├── pending_messages.json              # 推送缓存（仅推送失败时存在）
 ├── AGENTS.md                          # 通用 AI 操作手册（适用于任意 AI 工具）
 ├── CLAUDE.md                          # Claude Code 专属上下文（引用 AGENTS.md）
 ├── com.shirley.crypto-daily-bot.plist.example        # 环境变量 plist 模板（正式配置在 ~/Library/LaunchAgents/，是端口/密钥的唯一权威源；不含调度，09:15 launchd 兜底已于 2026-07 移除）
@@ -157,7 +157,7 @@ Crypto Daily Bot/
 └── README.md                          # 本文件（人类阅读）
 ```
 
-> `logs/` 下的文件均为运行时自动生成，不预置。`pending_messages.json` 仅在 Telegram 发送失败时存在。
+> `logs/` 下的文件均为运行时自动生成，不预置。`pending_messages.json` 仅在飞书推送失败时存在。
 
 ---
 
@@ -169,8 +169,8 @@ Crypto Daily Bot/
 
 | 变量 | 说明 | 来源 |
 |------|------|------|
-| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | plist（需手动填入） |
-| `TELEGRAM_CHAT_ID` | 目标 Chat ID | plist（已配置）|
+| `FEISHU_WEBHOOK` | 飞书自定义机器人 webhook 地址 | plist（需手动填入） |
+| `FEISHU_SECRET` | 机器人签名密钥（未开签名校验则留空） | plist（需手动填入） |
 | `COINGECKO_API_KEY` | CoinGecko Demo Key | plist（已配置）|
 | `HTTPS_PROXY` / `HTTP_PROXY` | 本地代理地址 | plist（已配置，127.0.0.1:YOUR_PORT）|
 
@@ -183,7 +183,7 @@ Crypto Daily Bot/
 cd ~/Desktop/bots/crypto\ daily\ bot
 bash claude_report.sh fetch     # 抓行情+新闻+抓正文，把写稿素材打到 stdout
 # （由 Claude 依 prompt_analysis.md / prompt_news.md 写两稿，分别存入 logs/report_analysis.txt 与 report_news.txt）
-bash claude_report.sh send      # 读取两稿，清洗 HTML 后依次推送 Telegram
+bash claude_report.sh send      # 读取两稿，清洗 HTML 后依次推送飞书
 ```
 
 **验证调度状态**
