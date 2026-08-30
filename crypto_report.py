@@ -35,7 +35,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "shared"))
 from bot_utils import (sanitize_html, with_retry, fetch_rss, parse_entry_date,
                        already_ran_today, fetch_article_text,
                        url_key, load_sent_urls, record_sent_urls, extract_hrefs,
-                       send_feishu, update_zero_streak, resolve_proxy)
+                       send_feishu, update_zero_streak, resolve_proxy,
+                       make_logger, make_pending_saver, proxy_ok,
+                       emit_fetch_output)
 
 LOG_FILE   = Path(__file__).parent / "logs" / "run.log"
 JSONL_FILE = Path(__file__).parent / "logs" / "run.jsonl"
@@ -47,6 +49,9 @@ DRAFT_ANALYSIS = Path(__file__).parent / "logs" / "report_analysis.txt"   # 消�
 DRAFT_NEWS     = Path(__file__).parent / "logs" / "report_news.txt"       # 消息②新闻播报
 # fetch 模式写出、send 模式读回的边车：承载 OK 日志摘要与 health_check 所需 metrics
 FETCH_META     = Path(__file__).parent / "logs" / "fetch_meta.json"
+# fetch 抓来的完整 stdout（marker + context）落盘一份：调用方截断、进程中断、
+# 或写稿失败要重来时，不必再打一遍外部 API。每次 fetch 覆盖写，只留最近一次。
+LAST_CONTEXT = Path(__file__).parent / "logs" / "last_context.txt"
 # 跨天去重档案：send 成功后记录稿件里实际用到的链接，fetch 时据此排除。
 # Crypto 的时间窗是 3 天而每天跑一次，没有这层同一条新闻会连播多天。
 SENT_URLS      = Path(__file__).parent / "logs" / "sent_urls.json"
@@ -71,17 +76,9 @@ if _PROXY:
     os.environ.setdefault("HTTPS_PROXY", _PROXY)
 
 
-# ===== P1: 结构化日志 =====
-def write_log(status: str, message: str, metrics: dict = None) -> None:
-    ts   = datetime.now().strftime("%Y-%m-%d %H:%M")
-    line = f"{ts}  [{status}]  {message}\n"
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(line)
-    print(line, end="")
-    if metrics:
-        record = {"ts": ts, "status": status, "msg": message, **metrics}
-        with open(JSONL_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+# ===== P1: 结构化日志（实现见 shared/bot_utils.make_logger）=====
+write_log = make_logger(LOG_FILE, JSONL_FILE)
+
 
 
 # ===== 配置 =====
@@ -105,9 +102,8 @@ RSS_SOURCES = [
 # 注意：**不做自动重发**——重发要判断"这稿子还是今天的吗"，跨天重发旧稿比丢一次
 # 更糟。当天补救由 health_check → claude_catchup 重走完整流程负责，缓存只作为
 # 人工恢复的兜底副本。（2026-08 删除了定义后从未被调用的 flush_pending。）
-def save_pending(messages: list) -> None:
-    with open(CACHE_FILE, "w", encoding="utf-8") as f:
-        json.dump({"ts": datetime.now().isoformat(), "messages": messages}, f, ensure_ascii=False)
+save_pending = make_pending_saver(CACHE_FILE)
+
 
 
 # ===== 获取价格数据 =====
@@ -412,22 +408,11 @@ def send_report(text: str) -> int:
 
 # ===== 抓取阶段（fetch / full 共用）=====
 def _proxy_ok() -> bool:
-    """代理预检 + 端口自愈。
-
-    配置端口不通时会探测候选端口（见 bot_utils.PROXY_CANDIDATES），命中则
-    就地切换本进程的 SESSION 与环境变量——换代理软件导致端口变化时不再
-    静默停摆。无代理配置直接放行（视为直连）。"""
+    """代理预检 + 端口自愈，实现见 shared/bot_utils.proxy_ok。"""
     global _PROXY
-    resolved, switched = resolve_proxy(_PROXY)
-    if resolved is None:
-        return not _PROXY          # 本来就没配代理 → 直连放行；配了但全不通 → 失败
-    if switched:
-        _PROXY = resolved
-        SESSION.proxies = {"http": resolved, "https": resolved}
-        # feedparser 走 urllib，必须同步环境变量（用赋值而非 setdefault）
-        os.environ["HTTP_PROXY"] = resolved
-        os.environ["HTTPS_PROXY"] = resolved
-    return True
+    ok, _PROXY = proxy_ok(_PROXY, SESSION)
+    return ok
+
 
 
 def gather() -> dict:
@@ -574,28 +559,27 @@ def run_fetch() -> int:
         encoding="utf-8",
     )
 
-    # stdout 只输出结构化标记 + context，供 Claude routine 稳定解析
-    print("=== FETCH_OK ===")
-    print(f"今天日期：{data['today']}")
+    # stdout 只输出结构化标记 + context，供 Claude routine 稳定解析。
+    # 先攒成列表再一次性交给 emit_fetch_output，顺带落盘 logs/last_context.txt。
+    out = ["=== FETCH_OK ===", f"今天日期：{data['today']}"]
     if data.get("news_included", True):
-        print("=== NEWS_INCLUDED ===")
-        print(f"保留 {data['news_count']} 条有效新闻（共抓取 {len(data['all_entries'])} 条）")
+        out.append("=== NEWS_INCLUDED ===")
+        out.append(f"保留 {data['news_count']} 条有效新闻（共抓取 {len(data['all_entries'])} 条）")
     else:
         # 非新闻日：只写消息①。routine 读到这个标记就不要写/发消息②，
         # 磁盘上那份 report_news.txt 是几天前的旧稿，绝不能重发。
-        print("=== NEWS_SKIPPED ===")
-        print(f"距上次播新闻 {data.get('news_elapsed','?')} 天，未到 {NEWS_INTERVAL_DAYS} 天周期，本次只出行情")
+        out.append("=== NEWS_SKIPPED ===")
+        out.append(f"距上次播新闻 {data.get('news_elapsed','?')} 天，未到 {NEWS_INTERVAL_DAYS} 天周期，本次只出行情")
     if data["zero_sources"]:
-        print(f"零产源：{', '.join(data['zero_sources'])}")
+        out.append(f"零产源：{', '.join(data['zero_sources'])}")
     # 连续零产达阈值 → 结构化告警块，供 routine 在日报汇报里转述给用户
     if data["stale_sources"]:
-        print("=== SOURCE_ALERT ===")
+        out.append("=== SOURCE_ALERT ===")
         for d, n in data["stale_sources"].items():
-            print(f"{d} 已连续 {n} 天零产，建议从 RSS_SOURCES 移除或更换")
-        print("=== SOURCE_ALERT_END ===")
-    print("=== CONTEXT_BEGIN ===")
-    print(data["news_context"])
-    print("=== CONTEXT_END ===")
+            out.append(f"{d} 已连续 {n} 天零产，建议从 RSS_SOURCES 移除或更换")
+        out.append("=== SOURCE_ALERT_END ===")
+    out += ["=== CONTEXT_BEGIN ===", data["news_context"], "=== CONTEXT_END ==="]
+    emit_fetch_output(out, LAST_CONTEXT)
     return 0
 
 

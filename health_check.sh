@@ -12,11 +12,73 @@ LOG="$DIR/logs/run.log"
 CHANGELOG="$DIR/changelog.md"
 OK_COUNT_FILE="$DIR/logs/.ok_streak"
 TODAY=$(date '+%Y-%m-%d')
+HOUR=$(date '+%H'); HOUR=${HOUR#0}; HOUR=${HOUR:-0}
+
+# 无头补跑的时间窗。RunAtLoad 打开后，本脚本会在每次开机/登录时也跑一遍，
+# 没有这个窗口就会出现两种误触发：
+#   · 早上 8 点开机 → 10:00 的 routine 还没到点，却被判成"今天没跑"而抢先补跑
+#   · 深夜 23 点开机 → 补出一份当天已经没人看的稿子，白烧 token
+# 窗口外只通知、不补跑。10:00 的 routine + 11:00 的定时体检都落在窗口内。
+CATCHUP_FROM=11
+CATCHUP_UNTIL=20
+# 缺跑回看天数：只用来"告诉你哪几天彻底没跑"，不触发任何补救动作
+MISSED_LOOKBACK=7
+MISSED_STAMP="$DIR/logs/.missed_notified"
+
+# ── 0. 告警通道：桌面通知 + 飞书 ─────────────────────────────────────
+# 桌面通知只在人坐在电脑前时有效。2026-08-30 查出三个 health job 因 EX_CONFIG
+# 连续 11 天没跑成，而唯一的告警渠道恰好也是最看不见的那个——故障本身把报警器
+# 一起带走了。飞书是已经在手的送达渠道，这里让每条告警同时走两边。
+BOT_NAME="Crypto Daily Bot"
+ALERT_PY="$DIR/../shared/alert.py"
+MAIN_PLIST="$HOME/Library/LaunchAgents/com.shirley.crypto-daily-bot.plist"
+
+# 只从主 plist 取 FEISHU_* ——那里还放着 PATH 等键，整份 export 会覆盖体检
+# 自己的 PATH，进而影响 claude_catchup 找 claude 可执行文件。
+# 想把运维消息分流到单独的群，在主 plist 里加 FEISHU_ALERT_WEBHOOK 即可。
+if [ -f "$MAIN_PLIST" ]; then
+    while IFS= read -r kv; do export "$kv"; done < <(
+        /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables" "$MAIN_PLIST" 2>/dev/null \
+        | sed -n 's/^[[:space:]]*\(FEISHU[A-Z_]*\) = \(.*\)$/\1=\2/p')
+fi
+
+# notify <FAIL|WARN|INFO> <正文>
+notify() {
+    local level="$1" msg="$2" icon
+    case "$level" in
+        FAIL) icon="🔴" ;;
+        WARN) icon="⚠️" ;;
+        *)    icon="ℹ️" ;;
+    esac
+    osascript -e "display notification \"$msg\" with title \"$icon $BOT_NAME\"" 2>/dev/null
+    # 告警发不出去是小事，让体检因此中断是大事，故整条容错
+    [ -f "$ALERT_PY" ] && /usr/bin/python3 "$ALERT_PY" "$BOT_NAME" "$level" "$msg" 2>&1 \
+        | grep -v NotOpenSSLWarning | grep -v "warnings.warn" || true
+    return 0
+}
 
 # ── 1. 检查 run.log 是否存在 ─────────────────────────────────────────
 if [ ! -f "$LOG" ]; then
-    osascript -e 'display notification "run.log 不存在，脚本可能从未运行" with title "⚠️ Crypto Daily Bot"'
+    notify FAIL "run.log 不存在，脚本可能从未运行"
     exit 1
+fi
+
+# ── 1.5 缺跑扫描：最近 N 天里哪几天 run.log 一行记录都没有 ────────────
+# 「一行都没有」= 那天机器没开 / 进程压根没起来，与「跑了但跳过」（WARN 有记录）
+# 是两回事。这类静默缺失过去无人知晓：2026-08-28、08-29 两天全丢，直到 08-30
+# 写周回顾时才从存档少了两份发现。这里只做告知，不做补救——过期的日报没有补的意义。
+MISSED=""
+for i in $(seq 1 "$MISSED_LOOKBACK"); do
+    D=$(date -v-"${i}"d '+%Y-%m-%d' 2>/dev/null) || break
+    grep -q "^$D" "$LOG" || MISSED="$D${MISSED:+, }$MISSED"
+done
+if [ -n "$MISSED" ]; then
+    echo "[health_check] 缺跑：最近 $MISSED_LOOKBACK 天内这些日期无任何运行记录 — $MISSED"
+    # 同一天只弹一次，避免 RunAtLoad 每次开机都重复打扰
+    if [ "$(cat "$MISSED_STAMP" 2>/dev/null)" != "$TODAY" ]; then
+        notify WARN "近 $MISSED_LOOKBACK 天有缺跑：$MISSED"
+        echo "$TODAY" > "$MISSED_STAMP"
+    fi
 fi
 
 # ── 2. 判断今天的运行状态（基于日期，而不是 tail -1）────────────────
@@ -73,7 +135,13 @@ if [ "$STATUS" = "FAIL" ]; then
 elif [ "$STATUS" = "MISSING" ]; then
     # 10:00 routine 今天未运行（机器睡眠 / App 未开等）
     # → 触发无头补跑（自动版 Run Now），由 claude CLI 完整重走 fetch → 写稿 → send
-    osascript -e 'display notification "今天主脚本未运行，已触发无头补跑" with title "⚠️ Crypto Daily Bot"'
+    if [ "$HOUR" -lt "$CATCHUP_FROM" ] || [ "$HOUR" -ge "$CATCHUP_UNTIL" ]; then
+        # 窗口外（多半是 RunAtLoad 在清早或深夜触发的这一次）：不补跑，只留一行记录。
+        # 清早不补是因为 10:00 的 routine 还没轮到；深夜不补是因为稿子已经没人看。
+        echo "[health_check] 今天（$TODAY）无运行记录，但当前 ${HOUR} 点不在补跑窗口 ${CATCHUP_FROM}-${CATCHUP_UNTIL} 点内，跳过补跑"
+        exit 0
+    fi
+    notify WARN "今天主脚本未运行，已触发无头补跑"
     echo "[health_check] WARN: 今天（$TODAY）无任何运行记录，触发无头补跑..."
     # 前台执行，理由同 auto_repair 分支（launchd 进程组回收）
     bash "$DIR/claude_catchup.sh"
@@ -82,7 +150,7 @@ fi
 
 if [ "$STATUS" = "NO_NEWS" ]; then
     # 当天无有效新闻：正常终态，不补跑、不自愈、不计入 OK streak
-    osascript -e 'display notification "今天无有效新闻，未出稿（非故障）" with title "ℹ️ Crypto Daily Bot"' 2>/dev/null
+    notify INFO "今天无有效新闻，未出稿（非故障）"
     echo "[health_check] NO_NEWS: 今天（$TODAY）无有效新闻，属正常终态，不触发补跑"
     exit 0
 fi
@@ -92,7 +160,7 @@ JSONL="$DIR/logs/run.jsonl"
 if [ -f "$JSONL" ]; then
     LAST_BTC=$(grep "$TODAY" "$JSONL" | tail -1 | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('btc','ok'))" 2>/dev/null)
     if [ "$LAST_BTC" = "未知" ]; then
-        osascript -e 'display notification "BTC 价格数据缺失，请检查 CoinGecko API Key" with title "⚠️ Crypto Daily Bot"'
+        notify WARN "BTC 价格数据缺失，请检查 CoinGecko API Key"
         echo "[health_check] WARN: BTC 价格数据缺失"
     fi
 fi
@@ -110,7 +178,7 @@ try:
 except Exception: print('')
 " 2>/dev/null)
     if [ -n "$STALE" ]; then
-        osascript -e "display notification \"RSS 源连续零产，建议移除：$STALE\" with title \"⚠️ Crypto Daily Bot\""
+        notify WARN "RSS 源连续零产，建议移除：$STALE"
         echo "[health_check] WARN: RSS 源连续零产，建议移除或更换: $STALE"
     fi
 
