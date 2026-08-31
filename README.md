@@ -40,18 +40,6 @@
 
 ---
 
-## Demo 预览
-
-<details>
-<summary>点击展开查看 Bot 的推送长图预览（截图摄于 Telegram 时期，版式与飞书一致）</summary>
-<br>
-
-![Crypto Daily Bot 运行效果图](full_demo.png)
-
-</details>
-
----
-
 ## 系统架构与工作流
 
 ```
