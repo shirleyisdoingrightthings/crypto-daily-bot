@@ -21,9 +21,9 @@ HOUR=$(date '+%H'); HOUR=${HOUR#0}; HOUR=${HOUR:-0}
 # 窗口外只通知、不补跑。10:00 的 routine + 11:00 的定时体检都落在窗口内。
 CATCHUP_FROM=11
 CATCHUP_UNTIL=20
-# 缺跑回看天数：只用来"告诉你哪几天彻底没跑"，不触发任何补救动作
+# 缺跑回看天数：只用来"告诉你哪几天彻底没跑"，不触发任何补救动作，也不推送告警
+# （见下面 1.5 节；.missed_notified 时间戳已随推送一起废弃）
 MISSED_LOOKBACK=7
-MISSED_STAMP="$DIR/logs/.missed_notified"
 
 # ── 0. 告警通道：桌面通知 + 飞书 ─────────────────────────────────────
 # 桌面通知只在人坐在电脑前时有效。2026-08-30 查出三个 health job 因 EX_CONFIG
@@ -67,18 +67,20 @@ fi
 # 「一行都没有」= 那天机器没开 / 进程压根没起来，与「跑了但跳过」（WARN 有记录）
 # 是两回事。这类静默缺失过去无人知晓：2026-08-28、08-29 两天全丢，直到 08-30
 # 写周回顾时才从存档少了两份发现。这里只做告知，不做补救——过期的日报没有补的意义。
+#
+# ⚠️ 2026-09-03：这一段**只写本地日志，不再推送告警**。原来它每天把整个 7 天窗口
+# 里的缺跑日期推一遍，同一批旧日期（08-28、08-29）会连推 7 天才滚出窗口，读起来
+# 像「今天又出问题了」，而当天其实跑得好好的。当天缺跑不需要靠这里发现——下面
+# 第 2/3 节的 MISSING 分支本来就会在补跑窗口内发一条「今天主脚本未运行」。
+# 所以这里保留扫描（排查时看 health_check.log 仍能知道哪几天丢了），去掉推送。
+# 不要因为「历史缺跑没人告诉我」把 notify 加回来——要加也只加当天那一天。
 MISSED=""
 for i in $(seq 1 "$MISSED_LOOKBACK"); do
     D=$(date -v-"${i}"d '+%Y-%m-%d' 2>/dev/null) || break
     grep -q "^$D" "$LOG" || MISSED="$D${MISSED:+, }$MISSED"
 done
 if [ -n "$MISSED" ]; then
-    echo "[health_check] 缺跑：最近 $MISSED_LOOKBACK 天内这些日期无任何运行记录 — $MISSED"
-    # 同一天只弹一次，避免 RunAtLoad 每次开机都重复打扰
-    if [ "$(cat "$MISSED_STAMP" 2>/dev/null)" != "$TODAY" ]; then
-        notify WARN "近 $MISSED_LOOKBACK 天有缺跑：$MISSED"
-        echo "$TODAY" > "$MISSED_STAMP"
-    fi
+    echo "[health_check] 缺跑（仅本地记录，不推送）：最近 $MISSED_LOOKBACK 天内这些日期无任何运行记录 — $MISSED"
 fi
 
 # ── 2. 判断今天的运行状态（基于日期，而不是 tail -1）────────────────
