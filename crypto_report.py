@@ -87,6 +87,10 @@ FEISHU_WEBHOOK    = os.getenv("FEISHU_WEBHOOK", "")
 FEISHU_SECRET     = os.getenv("FEISHU_SECRET",  "")
 COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY", "your_coingecko_demo_api_key")
 
+# CMC 的 data-api 对不带 UA 的请求会挡掉，和 CNBC quote 是同一类防爬。
+_FNG_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36")
+
 # limit 之和原为 14，恰等于每日入选数——评分规则形同虚设（抓 14 留 14，无取舍
 # 空间）。2026-08 提高到 22，让 prompt 里的 3/4/5 分筛选真正有东西可筛。
 RSS_SOURCES = [
@@ -208,13 +212,38 @@ def fetch_global_market() -> dict:
 # ===== 获取恐惧贪婪指数 =====
 @with_retry(max_retries=2, base_delay=5, exceptions=(Exception,))
 def fetch_fear_greed() -> tuple:
+    """恐惧贪婪指数。主源 alternative.me，备用 CoinMarketCap。
+
+    2026-09-04 加备用源。起因：9-04 那轮主源抓失败，稿子里的恐惧指数印成了
+    「未知(未知)」照样发了出去——单源没有任何兜底。当天复查发现主源本身是好的
+    （返回 74 Greed），失败是本机整体出网故障所致，但单点依赖的问题是实打实的。
+
+    备用源用 CMC 的 data-api 图表端点，**无需 API key**，但必须带 start/end
+    时间戳，不带会返回 400。它没有 /latest 路径（404），所以取最近两天的曲线、
+    拿最后一个点。两家口径不同（同日实测 alternative.me=74、CMC=77），
+    都是 0-100 同向刻度，量级一致，作为兜底可接受——但别把两家的数字混着比。
+    CMC 的 name 字段本身就是 Neutral/Greed/Fear 这类英文分类，可直接用。
+    """
     try:
         resp = SESSION.get("https://api.alternative.me/fng/", timeout=10)
         resp.raise_for_status()
         item = resp.json()["data"][0]
         return item["value"], item["value_classification"]
     except Exception as e:
-        print(f"[WARN] 恐惧贪婪指数抓取失败: {e}", file=sys.stderr)
+        print(f"[WARN] 恐惧贪婪指数主源(alternative.me)失败: {e}，改用 CMC 备用源",
+              file=sys.stderr)
+
+    try:
+        now = int(time.time())
+        resp = SESSION.get(
+            "https://api.coinmarketcap.com/data-api/v3/fear-greed/chart"
+            f"?start={now - 86400 * 2}&end={now}",
+            headers={"User-Agent": _FNG_UA}, timeout=10)
+        resp.raise_for_status()
+        point = resp.json()["data"]["dataList"][-1]
+        return str(point["score"]), point["name"]
+    except Exception as e:
+        print(f"[WARN] 恐惧贪婪指数备用源(CMC)也失败: {e}", file=sys.stderr)
         return "未知", "未知"
 
 
